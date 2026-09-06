@@ -41,7 +41,29 @@ export async function downloadFileStream(auth, fileId, res) {
     { responseType: "stream" }
   );
   res.setHeader("Content-Type", "application/pdf");
-  driveRes.data.pipe(res);
+  // Never let a browser (or any intermediary) cache a PDF response and
+  // silently reuse it later — especially important right after a bad
+  // response (e.g. one cut short by a memory-limited restart), which
+  // could otherwise keep being served from cache even once the
+  // underlying file is fine again.
+  res.setHeader("Cache-Control", "no-store");
+
+  await new Promise((resolve, reject) => {
+    // If the Drive read stream dies partway through (network blip, the
+    // process getting killed for memory before finishing, etc.), pipe()
+    // alone won't stop Express from ending the response as if it
+    // succeeded — the browser can end up with a truncated PDF that
+    // *looks* like a normal 200 response. Explicitly destroying the
+    // response on a stream error turns that into a real, visible
+    // network failure instead of a silent partial file.
+    driveRes.data.on("error", (err) => {
+      res.destroy(err);
+      reject(err);
+    });
+    res.on("finish", resolve);
+    res.on("error", reject);
+    driveRes.data.pipe(res);
+  });
 }
 
 export async function deleteFile(auth, fileId) {
