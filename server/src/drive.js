@@ -96,6 +96,22 @@ export async function findChildByName(auth, parentId, name, mimeType) {
   return res.data.files?.[0]?.id || null;
 }
 
+/** Lists every non-trashed file directly inside a folder — used to look
+ *  at what's already in a couple's existing subfolder when importing
+ *  them into the app for the first time (see POST /api/couples/import). */
+export async function listFilesInFolder(auth, folderId) {
+  const drive = driveClient(auth);
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: "files(id, name, mimeType)",
+    pageSize: 200,
+    includeItemsFromAllDrives: true,
+    corpora: "allDrives",
+    ...SHARED_DRIVE_SUPPORT,
+  });
+  return res.data.files || [];
+}
+
 /** Creates a new Drive folder (used to give each couple their own
  *  subfolder under the configured "Couples" parent folder). Returns the
  *  new folder's id. */

@@ -148,7 +148,7 @@ this is now two pieces:
   `id, slug, groom, groomEmail, groomPhone, bride, brideEmail, bridePhone,
   weddingDate, prepStartDate, lastAppointment, status, drivePath,
   templateIds, templateData, priest, archived, archivedReason,
-  archivedAt, templateCopies, documents, coupleDriveFolderId`.
+  archivedAt, templateCopies, documents, coupleDriveFolderId, checklist`.
   - `slug` is the URL-safe id used in each couple's own address —
     `groomlastname-bridelastname` (e.g. `alvarez-nguyen`). It's generated
     from their names, de-duplicated with a `-2`, `-3` suffix if two
@@ -172,6 +172,14 @@ this is now two pieces:
   - `coupleDriveFolderId` is this couple's own Drive subfolder, created
     the first time they need one (see section 5, "Drive folder
     structure"). Every file below is stored inside it.
+  - `checklist` is **a JSON blob**: `{ requirements: { "<itemKey>": {
+    dateCompleted, notes } }, meetings: { "<itemKey>": { dateCompleted }
+    } }` — the fixed "Requirements Checklist" and "Meetings with Priest"
+    lists from the diocese's own Marriage Preparation checklist
+    spreadsheet, shown on the profile page under Fillable Forms. The item
+    lists themselves (`REQUIREMENTS_ITEMS`/`MEETINGS_ITEMS`) are constants
+    in `CoupleProfileScreen.jsx`, not admin-editable templates — edit that
+    file directly if the diocese's checklist changes.
   - `templateCopies` is **a JSON blob**: `{ "<templateId>": "<driveFileId>"
     }` — the id of this couple's *own* Drive copy of that template, made
     on first open, living in their subfolder. Saves only ever overwrite
@@ -239,7 +247,7 @@ this is now two pieces:
 
    **Couples** tab, row 1:
    ```
-   id | slug | groom | groomEmail | groomPhone | bride | brideEmail | bridePhone | weddingDate | prepStartDate | lastAppointment | status | drivePath | templateIds | templateData | priest | archived | archivedReason | archivedAt | templateCopies | documents | coupleDriveFolderId
+   id | slug | groom | groomEmail | groomPhone | bride | brideEmail | bridePhone | weddingDate | prepStartDate | lastAppointment | status | drivePath | templateIds | templateData | priest | archived | archivedReason | archivedAt | templateCopies | documents | coupleDriveFolderId | checklist
    ```
 
    **Priests** tab, row 1:
@@ -344,6 +352,38 @@ this is now two pieces:
    should have full access (every couple, Settings, uploading/deleting
    templates, and editing the Priests roster). Everyone else can only
    sign in once the admin has added their email under Settings → Priests.
+
+---
+
+## 5a. Importing couples who started before this app existed
+
+Settings → the very bottom → **"Import an existing couple"**. This is for
+a couple who was already in marriage prep and already has their own Drive
+folder with fillable copies sitting in it — normal intake would create a
+*new*, empty subfolder for them, which isn't what you want here.
+
+Fill in their name/contact/wedding date like normal intake, but instead of
+picking forms to assign, paste their **existing** Drive folder's URL or
+id. The backend then:
+
+1. Sets that couple's `coupleDriveFolderId` directly to the folder you gave
+   it, instead of creating a new one.
+2. Lists every PDF already in that folder and loosely matches each one's
+   filename against your uploaded templates' titles (case/punctuation-
+   insensitive, either containing the other — so "Prenuptial Form.pdf",
+   "Prenuptial Form - Smith Jones", and "PRENUPTIAL_FORM (2)" all match a
+   template titled "Prenuptial Form").
+3. Auto-assigns and links every match, so that couple's existing paperwork
+   shows up already connected — opening "Fill out forms" for them loads
+   their real, existing file, not a fresh empty copy.
+4. Reports back exactly what got matched to what, and lists any PDFs in
+   the folder that didn't match anything (nothing is deleted or
+   overwritten either way — those files just aren't linked to a specific
+   template yet; use "Add form" on the couple's profile and rename the
+   Drive file to match if you want it picked up automatically next time).
+
+Admin only, since pointing two different couples at the same folder by
+mistake would mix up real records.
 
 ---
 

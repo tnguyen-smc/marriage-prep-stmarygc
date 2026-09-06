@@ -68,6 +68,7 @@ export default function App() {
         onBack={() => go("/")}
         onTemplatesChanged={() => api.templates.list().then(setTemplates)}
         onPriestsChanged={() => api.priests.list().then(setPriests)}
+        onCoupleImported={(couple) => setCouples((prev) => [...prev, couple])}
       />
     );
   }

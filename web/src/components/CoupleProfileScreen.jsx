@@ -168,6 +168,16 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
     setAddFormOpen(false);
   };
 
+  // Only unassigns — deliberately does NOT touch templateCopies, so the
+  // couple's actual filled PDF stays exactly as it is in Drive. Adding
+  // the same form back later finds that same copy again rather than
+  // creating a fresh, empty one.
+  const removeForm = async (templateId) => {
+    const template = templates.find((t) => t.id === templateId);
+    if (!confirm(`Remove "${template?.title || "this form"}" from this couple? Their filled copy stays in Drive — adding it back later picks up right where they left off.`)) return;
+    await patch({ templateIds: couple.templateIds.filter((id) => id !== templateId) });
+  };
+
   const copyUrl = () => {
     navigator.clipboard?.writeText(profileUrl);
     setCopied(true);
@@ -343,16 +353,25 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
                         </div>
                       </div>
                     </div>
-                    <a
-                      href={`${API_URL}/api/couples/${couple.id}/templates/${t.id}/file`}
-                      target="_blank"
-                      rel="noopener"
-                      className="flex items-center gap-1.5 text-[12px] flex-shrink-0"
-                      style={{ color: "#6E675C", fontFamily: FONT_SANS }}
-                    >
-                      <ExternalLink size={13} />
-                      PDF
-                    </a>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <a
+                        href={`${API_URL}/api/couples/${couple.id}/templates/${t.id}/file`}
+                        target="_blank"
+                        rel="noopener"
+                        className="flex items-center gap-1.5 text-[12px]"
+                        style={{ color: "#6E675C", fontFamily: FONT_SANS }}
+                      >
+                        <ExternalLink size={13} />
+                        Preview PDF
+                      </a>
+                      <button
+                        onClick={() => removeForm(t.id)}
+                        className="p-1.5 rounded-lg opacity-40 hover:opacity-100 hover:bg-black/5"
+                        title={`Remove "${t.title}" from this couple (rare — their filled copy stays in Drive)`}
+                      >
+                        <Trash2 size={12} color={brick} />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -367,6 +386,19 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
             </div>
 
             <div className="mb-6">
+              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>MEETINGS WITH PRIEST</div>
+              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+                <div className="hidden sm:grid grid-cols-[1fr,150px] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
+                  <span>MEETING</span>
+                  <span>DATE COMPLETED</span>
+                </div>
+                {MEETINGS_ITEMS.map((item) => (
+                  <MeetingRow key={item.key} item={item} value={checklist.meetings?.[item.key]} onSave={saveMeeting} />
+                ))}
+              </div>
+            </div>
+
+            <div>
               <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>REQUIREMENTS CHECKLIST</div>
               <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
                 <div className="hidden sm:grid grid-cols-[1fr,150px,1fr] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
@@ -376,19 +408,6 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
                 </div>
                 {REQUIREMENTS_ITEMS.map((item) => (
                   <RequirementRow key={item.key} item={item} value={checklist.requirements?.[item.key]} onSave={saveRequirement} />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>MEETINGS WITH PRIEST</div>
-              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-                <div className="hidden sm:grid grid-cols-[1fr,150px] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
-                  <span>MEETING</span>
-                  <span>DATE COMPLETED</span>
-                </div>
-                {MEETINGS_ITEMS.map((item) => (
-                  <MeetingRow key={item.key} item={item} value={checklist.meetings?.[item.key]} onSave={saveMeeting} />
                 ))}
               </div>
             </div>

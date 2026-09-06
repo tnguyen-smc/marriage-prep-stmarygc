@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChevronLeft, Upload, FileText, Trash2, Save, Plus, FolderOpen, Check } from "lucide-react";
 import { ink, bronze, sage, brick, FONT_SERIF, FONT_SANS, inputStyle } from "../theme.js";
+import { Field } from "./Shared.jsx";
 import { api } from "../api.js";
 
 function PriestRow({ priest, onSaved, onRemoved }) {
@@ -211,7 +212,111 @@ function DriveFoldersSetting() {
   );
 }
 
-export default function SettingsScreen({ templates, priests, onBack, onTemplatesChanged, onPriestsChanged }) {
+function ImportCoupleSetting({ priests, onImported }) {
+  const empty = { groom: "", bride: "", weddingDate: "", groomEmail: "", brideEmail: "", groomPhone: "", bridePhone: "", priest: "", existingFolder: "" };
+  const [form, setForm] = useState(empty);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState(null);
+  const [result, setResult] = useState(null); // { matched, unmatchedFiles }
+
+  const canImport = form.groom.trim() && form.bride.trim() && form.weddingDate && form.existingFolder.trim() && !importing;
+
+  const handleImport = async () => {
+    if (!canImport) return;
+    setImporting(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api.couples.import({
+        groom: form.groom.trim(),
+        bride: form.bride.trim(),
+        weddingDate: form.weddingDate,
+        groomEmail: form.groomEmail.trim(),
+        brideEmail: form.brideEmail.trim(),
+        groomPhone: form.groomPhone.trim(),
+        bridePhone: form.bridePhone.trim(),
+        priest: form.priest,
+        existingFolder: form.existingFolder.trim(),
+      });
+      onImported(res.couple);
+      setResult({ matched: res.matched, unmatchedFiles: res.unmatchedFiles });
+      setForm(empty);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border p-5" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+      <h2 className="text-[16px] mb-1" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Import an existing couple</h2>
+      <p className="text-[13px] mb-4" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
+        For couples already in marriage prep before this app existed, who already have their own Drive folder with fillable copies in it.
+        Point this at that existing folder instead of creating a new one — the app will try to match its PDFs against your uploaded
+        templates by name and link them automatically, rather than creating duplicate copies alongside what's already there.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+        <Field label="Groom's full name"><input value={form.groom} onChange={(e) => setForm({ ...form, groom: e.target.value })} style={inputStyle} /></Field>
+        <Field label="Bride's full name"><input value={form.bride} onChange={(e) => setForm({ ...form, bride: e.target.value })} style={inputStyle} /></Field>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+        <Field label="Groom's email"><input value={form.groomEmail} onChange={(e) => setForm({ ...form, groomEmail: e.target.value })} style={inputStyle} /></Field>
+        <Field label="Bride's email"><input value={form.brideEmail} onChange={(e) => setForm({ ...form, brideEmail: e.target.value })} style={inputStyle} /></Field>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+        <Field label="Groom's phone"><input value={form.groomPhone} onChange={(e) => setForm({ ...form, groomPhone: e.target.value })} style={inputStyle} /></Field>
+        <Field label="Bride's phone"><input value={form.bridePhone} onChange={(e) => setForm({ ...form, bridePhone: e.target.value })} style={inputStyle} /></Field>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+        <Field label="Target wedding date"><input type="date" value={form.weddingDate} onChange={(e) => setForm({ ...form, weddingDate: e.target.value })} style={inputStyle} /></Field>
+        <Field label="Priest in charge">
+          <select value={form.priest} onChange={(e) => setForm({ ...form, priest: e.target.value })} style={inputStyle}>
+            <option value="">— Select a priest —</option>
+            {priests.filter((p) => p.name.trim()).map((p) => <option key={p.id} value={p.name}>{p.name} ({p.title})</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="mb-4">
+        <Field label="Their existing Drive folder (URL or id)"><input value={form.existingFolder} onChange={(e) => setForm({ ...form, existingFolder: e.target.value })} style={inputStyle} /></Field>
+      </div>
+
+      {error && <div className="text-[13px] mb-4" style={{ color: brick, fontFamily: FONT_SANS }}>{error}</div>}
+
+      <button
+        onClick={handleImport}
+        disabled={!canImport}
+        className="flex items-center gap-2 px-5 py-3 rounded-lg text-white text-[14px]"
+        style={{ background: canImport ? bronze : "#B7AF9F", fontFamily: FONT_SANS, cursor: canImport ? "pointer" : "not-allowed" }}
+      >
+        <FolderOpen size={16} />
+        {importing ? "Importing…" : "Import couple"}
+      </button>
+
+      {result && (
+        <div className="mt-4 rounded-lg p-3.5 text-[13px]" style={{ background: "#EEF2EE", color: sage, fontFamily: FONT_SANS }}>
+          <div className="flex items-center gap-2 mb-1">
+            <Check size={15} />
+            Imported. {result.matched.length} form{result.matched.length === 1 ? "" : "s"} linked automatically.
+          </div>
+          {result.matched.length > 0 && (
+            <ul className="ml-6 list-disc">
+              {result.matched.map((m) => <li key={m.template}>{m.template} → {m.file}</li>)}
+            </ul>
+          )}
+          {result.unmatchedFiles.length > 0 && (
+            <div className="mt-2" style={{ color: "#8A8378" }}>
+              Not matched to any template (still in their folder, just not linked): {result.unmatchedFiles.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SettingsScreen({ templates, priests, onBack, onTemplatesChanged, onPriestsChanged, onCoupleImported }) {
   const [title, setTitle] = useState("");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -347,6 +452,8 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
         </div>
 
         <DriveFoldersSetting />
+
+        <ImportCoupleSetting priests={priests} onImported={onCoupleImported} />
       </div>
     </div>
   );

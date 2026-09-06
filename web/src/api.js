@@ -9,8 +9,12 @@
 // For local development against a local server, create web/.env.local
 // containing: VITE_API_URL=http://localhost:4000
 export const API_URL =
-  import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com";
+  import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church.onrender.com";
 
+/** Pulls the real `{ "error": "..." }` message out of a failed response
+ *  instead of just reporting a bare status code, so specific, actionable
+ *  backend errors (e.g. "Set a Couples folder in Settings first") reach
+ *  the person instead of being replaced with something generic. */
 async function readErrorMessage(res) {
   const text = await res.text().catch(() => "");
   try {
@@ -21,7 +25,7 @@ async function readErrorMessage(res) {
   }
   return text || `${res.status} ${res.statusText}`;
 }
- 
+
 async function apiFetch(path, opts = {}) {
   const isFormData = opts.body instanceof FormData;
   const res = await fetch(`${API_URL}${path}`, {
@@ -36,12 +40,12 @@ async function apiFetch(path, opts = {}) {
   const contentType = res.headers.get("content-type") || "";
   return contentType.includes("application/json") ? res.json() : res;
 }
- 
+
 export const api = {
   loginUrl: () => `${API_URL}/api/auth/google`,
   me: () => apiFetch("/api/auth/me"),
   logout: () => apiFetch("/api/auth/logout", { method: "POST" }),
- 
+
   templates: {
     list: () => apiFetch("/api/templates"),
     upload: (title, file) => {
@@ -58,26 +62,27 @@ export const api = {
       return res.arrayBuffer();
     },
   },
- 
+
   priests: {
     list: () => apiFetch("/api/priests"),
     create: (payload) => apiFetch("/api/priests", { method: "POST", body: JSON.stringify(payload) }),
     update: (id, payload) => apiFetch(`/api/priests/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
     remove: (id) => apiFetch(`/api/priests/${id}`, { method: "DELETE" }),
   },
- 
+
   settings: {
     get: () => apiFetch("/api/settings"),
     update: (payload) => apiFetch("/api/settings", { method: "PUT", body: JSON.stringify(payload) }),
   },
- 
+
   couples: {
     list: () => apiFetch("/api/couples"),
     get: (idOrSlug) => apiFetch(`/api/couples/${idOrSlug}`),
     create: (payload) => apiFetch("/api/couples", { method: "POST", body: JSON.stringify(payload) }),
     update: (id, payload) => apiFetch(`/api/couples/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
     remove: (id) => apiFetch(`/api/couples/${id}`, { method: "DELETE" }),
- 
+    import: (payload) => apiFetch("/api/couples/import", { method: "POST", body: JSON.stringify(payload) }),
+
     documents: {
       upload: (coupleId, name, file) => {
         const fd = new FormData();
@@ -87,12 +92,12 @@ export const api = {
       },
       remove: (coupleId, docId) => apiFetch(`/api/couples/${coupleId}/documents/${docId}`, { method: "DELETE" }),
     },
- 
+
     // Creates a real Google Calendar event: the couple is the guest, and
     // the description links back to their profile card.
     createEvent: (coupleId, payload) =>
       apiFetch(`/api/couples/${coupleId}/events`, { method: "POST", body: JSON.stringify(payload) }),
- 
+
     // Each couple gets their OWN Drive copy of any template PDF they're
     // assigned — created transparently the first time it's fetched — so
     // filling it in never touches the shared master file from Settings.
@@ -115,4 +120,3 @@ export const api = {
     },
   },
 };
- 

@@ -48,8 +48,8 @@ export function sortCouples(couples, sortKey) {
     default: {
       const today = new Date();
       return withNames.sort((a, b) => {
-        const da = Math.abs(new Date(a.weddingDate) - today);
-        const db = Math.abs(new Date(b.weddingDate) - today);
+        const da = a.weddingDate ? Math.abs(new Date(a.weddingDate) - today) : Infinity;
+        const db = b.weddingDate ? Math.abs(new Date(b.weddingDate) - today) : Infinity;
         return da - db;
       });
     }

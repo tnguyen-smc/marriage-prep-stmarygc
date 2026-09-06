@@ -5,7 +5,7 @@ import { v4 as uuid } from "uuid";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { readRows, appendRow, updateRow, getSheetIdByTitle, deleteRow } from "../sheets.js";
-import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile, createFolder, findChildByName } from "../drive.js";
+import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile, createFolder, findChildByName, listFilesInFolder } from "../drive.js";
 import { createEvent } from "../calendar.js";
 import { getConfigValue } from "../config.js";
 
@@ -65,6 +65,29 @@ function coupleCopyFilename(templateTitle, coupleRow) {
   const g = splitName(coupleRow.groom);
   const b = splitName(coupleRow.bride);
   return `${templateTitle} - ${g.first}, ${g.last} & ${b.first}, ${b.last}`;
+}
+
+/** Accepts either a raw Drive folder id or a full folder URL and returns
+ *  just the id — same convention as Settings' Drive folder fields. */
+function extractFolderId(input) {
+  const trimmed = (input || "").trim();
+  const match = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : trimmed;
+}
+
+/** Loosely compares a template's title against an existing file's name —
+ *  used when importing a couple who already has files sitting in their
+ *  own Drive folder from before this app existed, where file names won't
+ *  exactly match this app's own naming convention. Strips everything but
+ *  letters/numbers and checks either contains the other, so "Prenuptial
+ *  Form.pdf", "Prenuptial Form - Smith Jones", and "PRENUPTIAL_FORM
+ *  (2)" all match a template titled "Prenuptial Form". */
+function looselyMatches(a, b) {
+  const normalize = (s) => s.toLowerCase().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]/g, "");
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (!na || !nb) return false;
+  return na.includes(nb) || nb.includes(na);
 }
 
 /** Guarantees the slug is unique across all couples (appends -2, -3, ...). */
@@ -377,6 +400,85 @@ router.post("/:idOrSlug/events", requireAuth, async (req, res) => {
     await saveRow(req.oauth2Client, { ...match, lastAppointment: start.slice(0, 10) });
 
     res.json(event);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Brings a couple who was already in marriage prep before this app
+// existed into it — they already have their own Drive folder with their
+// fillable document copies sitting in it. Rather than creating a brand
+// new (empty) subfolder the way normal intake does, this points the
+// couple's record at their EXISTING folder, and tries to automatically
+// match its files against uploaded templates by name so their existing
+// paperwork shows up already linked, instead of the app creating fresh,
+// duplicate copies alongside what's already there. Admin only, since
+// getting this wrong (pointing two couples at the same folder, say)
+// could mix up real records.
+router.post("/import", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const b = req.body;
+    if (!b.groom || !b.bride || !b.weddingDate) {
+      return res.status(400).json({ error: "Groom, bride, and wedding date are required" });
+    }
+    const folderId = extractFolderId(b.existingFolder);
+    if (!folderId) {
+      return res.status(400).json({ error: "An existing Drive folder (URL or id) is required" });
+    }
+
+    const [{ rows: templateRows }, existingFiles] = await Promise.all([
+      readRows(req.oauth2Client, TEMPLATES_TAB),
+      listFilesInFolder(req.oauth2Client, folderId),
+    ]);
+
+    const templateCopies = {};
+    const templateIds = [];
+    const matched = [];
+    for (const template of templateRows) {
+      const file = existingFiles.find((f) => f.mimeType === "application/pdf" && looselyMatches(f.name, template.title));
+      if (file) {
+        templateCopies[template.id] = file.id;
+        templateIds.push(template.id);
+        matched.push({ template: template.title, file: file.name });
+      }
+    }
+    const unmatchedFiles = existingFiles
+      .filter((f) => f.mimeType === "application/pdf" && !Object.values(templateCopies).includes(f.id))
+      .map((f) => f.name);
+
+    const { rows } = await readRows(req.oauth2Client, TAB);
+    const slug = uniqueSlug(makeSlug(b.groom, b.bride), rows.map((r) => r.slug).filter(Boolean));
+    const today = new Date().toISOString().slice(0, 10);
+
+    const row = {
+      id: uuid(),
+      slug,
+      groom: b.groom,
+      groomEmail: b.groomEmail || "",
+      groomPhone: b.groomPhone || "",
+      bride: b.bride,
+      brideEmail: b.brideEmail || "",
+      bridePhone: b.bridePhone || "",
+      weddingDate: b.weddingDate,
+      prepStartDate: b.prepStartDate || today,
+      lastAppointment: b.lastAppointment || today,
+      status: b.status || "In Progress",
+      drivePath: "",
+      templateIds: templateIds.join(","),
+      templateData: "{}",
+      priest: b.priest || "",
+      archived: "false",
+      archivedReason: "",
+      archivedAt: "",
+      templateCopies: JSON.stringify(templateCopies),
+      documents: "[]",
+      coupleDriveFolderId: folderId,
+      checklist: JSON.stringify({ requirements: {}, meetings: {} }),
+    };
+    await appendRow(req.oauth2Client, TAB, HEADER, row);
+
+    res.json({ couple: parseRow(row), matched, unmatchedFiles });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

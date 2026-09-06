@@ -23,7 +23,7 @@ export default function IntakeModal({ open, onClose, onCreate, templates, priest
   if (!open) return null;
 
   const toggle = (id) => setForm((f) => ({ ...f, templateIds: { ...f.templateIds, [id]: !f.templateIds[id] } }));
-  const canSubmit = form.groom.trim() && form.bride.trim() && form.weddingDate;
+  const canSubmit = form.groom.trim() && form.bride.trim();
 
   const handleSubmit = () => {
     const templateIds = Object.entries(form.templateIds).filter(([, on]) => on).map(([id]) => id);
@@ -62,7 +62,7 @@ export default function IntakeModal({ open, onClose, onCreate, templates, priest
           <Field label="Bride's phone"><input value={form.bridePhone} onChange={(e) => setForm({ ...form, bridePhone: e.target.value })} style={inputStyle} /></Field>
         </div>
         <div className="mb-5">
-          <Field label="Target wedding date"><input type="date" value={form.weddingDate} onChange={(e) => setForm({ ...form, weddingDate: e.target.value })} style={{ ...inputStyle, width: "220px" }} /></Field>
+          <Field label="Target wedding date (optional — a priest can set this later)"><input type="date" value={form.weddingDate} onChange={(e) => setForm({ ...form, weddingDate: e.target.value })} style={{ ...inputStyle, width: "220px" }} /></Field>
         </div>
         <div className="mb-6">
           <Field label="Priest in charge">
