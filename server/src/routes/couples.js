@@ -51,6 +51,21 @@ function makeSlug(groom, bride) {
   return `${last(groom)}-${last(bride)}` || "couple";
 }
 
+/** "Michael Alvarez" -> { first: "Michael", last: "Alvarez" } */
+function splitName(full) {
+  const parts = (full || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first: "", last: "" };
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1] };
+}
+
+/** "Prenuptial Form" + this couple -> "Prenuptial Form - Michael, Alvarez & Teresa, Nguyen" */
+function coupleCopyFilename(templateTitle, coupleRow) {
+  const g = splitName(coupleRow.groom);
+  const b = splitName(coupleRow.bride);
+  return `${templateTitle} - ${g.first}, ${g.last} & ${b.first}, ${b.last}`;
+}
+
 /** Guarantees the slug is unique across all couples (appends -2, -3, ...). */
 function uniqueSlug(base, existingSlugs) {
   if (!existingSlugs.includes(base)) return base;
@@ -129,8 +144,9 @@ async function ensureCoupleCopy(auth, coupleRow, templateId) {
   if (!template) throw Object.assign(new Error("Template not found"), { status: 404 });
 
   const coupleFolderId = await ensureCoupleFolder(auth, coupleRow);
-  const existingCopy = await findChildByName(auth, coupleFolderId, template.title, "application/pdf");
-  const newFileId = existingCopy || (await copyFile(auth, template.driveFileId, template.title, coupleFolderId));
+  const copyName = coupleCopyFilename(template.title, coupleRow);
+  const existingCopy = await findChildByName(auth, coupleFolderId, copyName, "application/pdf");
+  const newFileId = existingCopy || (await copyFile(auth, template.driveFileId, copyName, coupleFolderId));
 
   copies[templateId] = newFileId;
   await saveRow(auth, { ...coupleRow, templateCopies: JSON.stringify(copies) });
