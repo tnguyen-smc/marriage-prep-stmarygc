@@ -30,7 +30,8 @@ router.post("/", requireAuth, requireAdmin, upload.single("file"), async (req, r
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     if (!req.body.title) return res.status(400).json({ error: "Title is required" });
-    const folderId = await getConfigValue(req.oauth2Client, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
+    const legacyFallback = await getConfigValue(req.oauth2Client, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
+    const folderId = await getConfigValue(req.oauth2Client, "templatesFolderId", legacyFallback);
     const { id: driveFileId } = await uploadPdf(req.oauth2Client, req.file.originalname, req.file.buffer, folderId);
     const row = { id: uuid(), title: req.body.title, driveFileId, createdAt: new Date().toISOString() };
     await appendRow(req.oauth2Client, TAB, HEADER, row);

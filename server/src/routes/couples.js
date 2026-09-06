@@ -4,7 +4,7 @@ import multer from "multer";
 import { v4 as uuid } from "uuid";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { readRows, appendRow, updateRow } from "../sheets.js";
-import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile } from "../drive.js";
+import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile, createFolder } from "../drive.js";
 import { createEvent } from "../calendar.js";
 import { getConfigValue } from "../config.js";
 
@@ -18,7 +18,7 @@ const HEADER = [
   "prepStartDate", "lastAppointment", "status", "drivePath",
   "templateIds", "templateData", "priest",
   "archived", "archivedReason", "archivedAt",
-  "templateCopies", "documents",
+  "templateCopies", "documents", "coupleDriveFolderId",
 ];
 
 // JSON-blob columns (templateData, templateCopies, documents) keep the
@@ -71,6 +71,30 @@ async function saveRow(auth, row) {
   return copy;
 }
 
+/** Returns this couple's own subfolder in Drive, creating it (under the
+ *  "Couples" parent folder set in Settings) the first time it's needed.
+ *  Every file that belongs to this couple — their template copies AND
+ *  any supporting documents — lives inside this one subfolder together,
+ *  so browsing Drive shows one folder per couple rather than everything
+ *  dumped flat into the parent. */
+async function ensureCoupleFolder(auth, coupleRow) {
+  if (coupleRow.coupleDriveFolderId) return coupleRow.coupleDriveFolderId;
+
+  const legacyFallback = await getConfigValue(auth, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
+  const couplesParentId = await getConfigValue(auth, "couplesFolderId", legacyFallback);
+
+  const folderId = await createFolder(auth, `${coupleRow.groom}_${coupleRow.bride}`, couplesParentId || undefined);
+
+  // Mutate the caller's row object in place (rather than spreading it
+  // into a new one) so that if the caller goes on to save this same row
+  // again later in the same request — e.g. ensureCoupleCopy saving
+  // templateCopies right after this runs — that later save still
+  // includes this folder id instead of overwriting it back to blank.
+  coupleRow.coupleDriveFolderId = folderId;
+  await saveRow(auth, coupleRow);
+  return folderId;
+}
+
 /** Returns this couple's own Drive copy of `templateId`, creating it from
  *  the template's master file on first use. The master is never modified. */
 async function ensureCoupleCopy(auth, coupleRow, templateId) {
@@ -81,13 +105,8 @@ async function ensureCoupleCopy(auth, coupleRow, templateId) {
   const template = templateRows.find((t) => t.id === templateId);
   if (!template) throw Object.assign(new Error("Template not found"), { status: 404 });
 
-  const folderId = await getConfigValue(auth, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
-  const newFileId = await copyFile(
-    auth,
-    template.driveFileId,
-    `${template.title} — ${coupleRow.groom}_${coupleRow.bride}.pdf`,
-    folderId
-  );
+  const coupleFolderId = await ensureCoupleFolder(auth, coupleRow);
+  const newFileId = await copyFile(auth, template.driveFileId, template.title, coupleFolderId);
 
   copies[templateId] = newFileId;
   await saveRow(auth, { ...coupleRow, templateCopies: JSON.stringify(copies) });
@@ -148,6 +167,7 @@ router.post("/", requireAuth, async (req, res) => {
       archivedAt: "",
       templateCopies: "{}",
       documents: "[]",
+      coupleDriveFolderId: "",
     };
     await appendRow(req.oauth2Client, TAB, HEADER, row);
     res.json(parseRow(row));
@@ -225,10 +245,10 @@ router.post("/:idOrSlug/documents", requireAuth, upload.single("file"), async (r
     const match = await findCouple(req.oauth2Client, req.params.idOrSlug);
     if (!match) return res.status(404).json({ error: "Couple not found" });
 
-    const folderId = await getConfigValue(req.oauth2Client, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
+    const folderId = await ensureCoupleFolder(req.oauth2Client, match);
     const { id: driveFileId, webViewLink } = await uploadFile(
       req.oauth2Client,
-      `${req.body.name || req.file.originalname} — ${match.groom}_${match.bride}`,
+      req.body.name || req.file.originalname,
       req.file.mimetype,
       req.file.buffer,
       folderId

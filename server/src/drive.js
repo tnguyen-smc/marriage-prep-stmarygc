@@ -49,6 +49,23 @@ export async function deleteFile(auth, fileId) {
   await drive.files.delete({ fileId, ...SHARED_DRIVE_SUPPORT });
 }
 
+/** Creates a new Drive folder (used to give each couple their own
+ *  subfolder under the configured "Couples" parent folder). Returns the
+ *  new folder's id. */
+export async function createFolder(auth, name, parentId) {
+  const drive = driveClient(auth);
+  const res = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: parentId ? [parentId] : undefined,
+    },
+    fields: "id",
+    ...SHARED_DRIVE_SUPPORT,
+  });
+  return res.data.id;
+}
+
 /** Makes a brand-new Drive file that's a copy of `fileId`, so filling it
  *  in never touches the original. Returns the new file's id. */
 export async function copyFile(auth, fileId, name, folderId) {

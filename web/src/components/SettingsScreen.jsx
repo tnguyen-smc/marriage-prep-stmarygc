@@ -78,29 +78,47 @@ function PriestRow({ priest, onSaved, onRemoved }) {
   );
 }
 
-function DriveFolderSetting() {
-  const [value, setValue] = useState("");
-  const [saved, setSaved] = useState("");
+function FolderField({ label, value, onChange }) {
+  return (
+    <div className="mb-4">
+      <div className="text-[12px] mb-1.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>{label}</div>
+      <div className="flex items-center gap-2">
+        <FolderOpen size={16} color={bronze} className="flex-shrink-0" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} style={inputStyle} />
+      </div>
+    </div>
+  );
+}
+
+function DriveFoldersSetting() {
+  const [templatesFolderId, setTemplatesFolderId] = useState("");
+  const [couplesFolderId, setCouplesFolderId] = useState("");
+  const [saved, setSaved] = useState({ templatesFolderId: "", couplesFolderId: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     api.settings.get()
-      .then((s) => { setValue(s.driveFolderId); setSaved(s.driveFolderId); })
+      .then((s) => {
+        setTemplatesFolderId(s.templatesFolderId);
+        setCouplesFolderId(s.couplesFolderId);
+        setSaved(s);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
-  const dirty = value !== saved;
+  const dirty = templatesFolderId !== saved.templatesFolderId || couplesFolderId !== saved.couplesFolderId;
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      const s = await api.settings.update({ driveFolderId: value });
-      setValue(s.driveFolderId);
-      setSaved(s.driveFolderId);
+      const s = await api.settings.update({ templatesFolderId, couplesFolderId });
+      setTemplatesFolderId(s.templatesFolderId);
+      setCouplesFolderId(s.couplesFolderId);
+      setSaved((prev) => ({ ...prev, ...s }));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -110,18 +128,16 @@ function DriveFolderSetting() {
 
   return (
     <div className="rounded-lg border p-5 mb-8" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-      <h2 className="text-[16px] mb-1" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Drive folder</h2>
+      <h2 className="text-[16px] mb-1" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Drive folders</h2>
       <p className="text-[13px] mb-4" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
-        Where uploaded templates and couples' documents are stored. Paste the folder's full Drive URL or just its id — either works, including a folder inside a Shared Drive. Changing this takes effect immediately, no redeploy needed.
+        Paste each folder's full Drive URL or just its id — either works, including a folder inside a Shared Drive. Changes take effect immediately, no redeploy needed.
       </p>
       {loading ? (
         <div className="text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Loading…</div>
       ) : (
         <>
-          <div className="flex items-center gap-2 mb-3">
-            <FolderOpen size={16} color={bronze} className="flex-shrink-0" />
-            <input value={value} onChange={(e) => setValue(e.target.value)} style={inputStyle} />
-          </div>
+          <FolderField label="Master templates folder — where uploads below are stored" value={templatesFolderId} onChange={setTemplatesFolderId} />
+          <FolderField label="Couples folder — each couple gets their own subfolder created inside this one automatically, holding their PDF copies and documents together" value={couplesFolderId} onChange={setCouplesFolderId} />
           {error && <div className="text-[13px] mb-3" style={{ color: brick, fontFamily: FONT_SANS }}>{error}</div>}
           <button
             onClick={handleSave}
@@ -187,7 +203,7 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
       </div>
 
       <div className="max-w-2xl mx-auto px-5 sm:px-8 py-8">
-        <DriveFolderSetting />
+        <DriveFoldersSetting />
 
         <div className="mb-8">
           <div className="flex items-center justify-between mb-1">

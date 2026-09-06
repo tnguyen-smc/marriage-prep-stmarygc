@@ -143,7 +143,7 @@ this is now two pieces:
   `id, slug, groom, groomEmail, groomPhone, bride, brideEmail, bridePhone,
   weddingDate, prepStartDate, lastAppointment, status, drivePath,
   templateIds, templateData, priest, archived, archivedReason,
-  archivedAt, templateCopies, documents`.
+  archivedAt, templateCopies, documents, coupleDriveFolderId`.
   - `slug` is the URL-safe id used in each couple's own address —
     `groomlastname-bridelastname` (e.g. `alvarez-nguyen`). It's generated
     from their names, de-duplicated with a `-2`, `-3` suffix if two
@@ -157,13 +157,17 @@ this is now two pieces:
   - `templateData` is **one JSON blob**: `{ "<templateId>": { "<pdf field
     name>": "value" } }` — what the priest has typed, used to repopulate
     the on-screen form instantly.
-  - `templateCopies` is **another JSON blob**: `{ "<templateId>":
-    "<driveFileId>" }` — the id of this couple's *own* Drive copy of that
-    template, made on first open. Fills only ever write to that copy; the
-    master uploaded in Settings is never touched.
+  - `coupleDriveFolderId` is this couple's own Drive subfolder, created
+    the first time they need one (see section 5, "Drive folder
+    structure"). Every file below is stored inside it.
+  - `templateCopies` is **a JSON blob**: `{ "<templateId>": "<driveFileId>"
+    }` — the id of this couple's *own* Drive copy of that template, made
+    on first open, living in their subfolder. Fills only ever write to
+    that copy; the master uploaded in Settings is never touched.
   - `documents` is **a JSON array**: `[ { id, name, driveFileId,
     webViewLink, uploadedAt } ]` — supporting files the priest uploads to
-    the couple (baptismal certificates, dispensations, scans).
+    the couple (baptismal certificates, dispensations, scans), stored in
+    that same subfolder.
 
 - **No hardcoded field maps.** Older prototypes of this app hand-transcribed
   every field name out of one specific diocesan PDF. That doesn't scale to
@@ -212,7 +216,7 @@ this is now two pieces:
 
    **Couples** tab, row 1:
    ```
-   id | slug | groom | groomEmail | groomPhone | bride | brideEmail | bridePhone | weddingDate | prepStartDate | lastAppointment | status | drivePath | templateIds | templateData | priest | archived | archivedReason | archivedAt | templateCopies | documents
+   id | slug | groom | groomEmail | groomPhone | bride | brideEmail | bridePhone | weddingDate | prepStartDate | lastAppointment | status | drivePath | templateIds | templateData | priest | archived | archivedReason | archivedAt | templateCopies | documents | coupleDriveFolderId
    ```
 
    **Priests** tab, row 1:
@@ -224,23 +228,89 @@ this is now two pieces:
    automatically. `title` is free text (e.g. "Pastor", "Parochial Vicar",
    or anything else) and can be renamed any time; you're not limited to
    two priests.
+
+   **Config** tab, row 1:
+   ```
+   key | value
+   ```
+   Leave the rows under it empty too — this holds small admin-editable
+   settings: `templatesFolderId` and `couplesFolderId` (see the Drive
+   folder structure just below). The app creates/updates these rows
+   automatically the first time the admin sets them in Settings.
 2. Copy the Sheet's ID out of its URL:
    `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit` → this is
    `GOOGLE_SHEET_ID`.
-3. Create a Google Drive folder for uploaded PDFs. Copy its ID out of the
-   URL the same way → this is `GOOGLE_DRIVE_FOLDER_ID`.
+3. Create Google Drive folders for uploaded PDFs. Copy each one's ID out
+   of its URL the same way → this is `GOOGLE_DRIVE_FOLDER_ID`.
+
+   **This env var is now just a starting fallback, not the only way to
+   set it.** The real, day-to-day configuration lives in **Settings →
+   Drive folders** in the app itself, which splits storage into two
+   separate folders:
+
+   ```
+   Web App/                              (your Shared Drive, however you've set it up)
+   ├── Master Templates PDF/             <- point "Master templates folder" here
+   │   ├── Prenuptial Form.pdf           (the master; priests never edit this one)
+   │   └── Baptismal Certificate Form.pdf
+   └── Couples/                          <- point "Couples folder" here
+       ├── Alvarez_Nguyen/               <- created automatically, one per couple
+       │   ├── Prenuptial Form.pdf       (Alvarez_Nguyen's own copy, filled in)
+       │   └── Baptismal Certificate — Michael Alvarez.pdf  (an uploaded document)
+       ├── Whitfield_Simmons/
+       │   └── ...
+       └── ...
+   ```
+
+   The first time a priest opens a template tab for a couple, or uploads
+   a supporting document to their profile, the app creates that couple's
+   subfolder under whichever folder **Couples folder** points to (named
+   `Groom_Bride`) and remembers its id (`coupleDriveFolderId` in the
+   Sheet) — every file that belongs to that couple, template copies and
+   documents alike, lands in that one subfolder from then on. Nothing
+   ever gets uploaded flat into a shared folder alongside every other
+   couple's files.
+
+   Changing either folder in Settings takes effect immediately, no
+   redeploy required — paste the folder's full URL or just its id,
+   including a folder inside a Shared Drive. `GOOGLE_DRIVE_FOLDER_ID` in
+   `server/.env` (or Render's Environment tab) only matters as a fallback
+   until the admin sets both folders in Settings for the first time;
+   after that, the values stored in the Sheet's `Config` tab win.
 
    > **If uploads fail with `500 {"error":"File not found: <some id>."}`**
-   > — this is almost always the scope, not the ID. Google's `drive.file`
-   > scope only lets an app see files/folders *it created itself*; it
-   > cannot see a folder you made by hand in Drive's own UI, even with the
-   > correct ID and full ownership. This app requests the broader `drive`
-   > scope specifically to avoid that trap (see `googleClient.js`) — if
-   > you're hitting this error, either the consent screen in Cloud
-   > Console is still only offering `drive.file`, or everyone signed in
-   > before the scope was widened and needs to **log out and back in** to
-   > pick up the new permission (Google never upgrades a stored token
-   > silently — same issue as adding the Calendar scope in section 8).
+   > — there are two independent, unrelated causes. Check both:
+   >
+   > 1. **Scope.** Google's `drive.file` scope only lets an app see
+   >    files/folders *it created itself*; it cannot see a folder you made
+   >    by hand in Drive's own UI, even with the correct ID and full
+   >    ownership. This app requests the broader `drive` scope specifically
+   >    to avoid that trap (see `googleClient.js`) — if you're hitting this
+   >    error, either the consent screen in Cloud Console is still only
+   >    offering `drive.file`, or everyone signed in before the scope was
+   >    widened and needs to **log out and back in** to pick up the new
+   >    permission (Google never upgrades a stored token silently — same
+   >    issue as adding the Calendar scope in section 8).
+   > 2. **Shared Drives.** If your folder lives inside a *Shared Drive*
+   >    ("Team Drive") rather than someone's personal My Drive, the scope
+   >    fix above isn't enough by itself — every Drive API call also needs
+   >    `supportsAllDrives: true`, or the API pretends Shared Drive items
+   >    don't exist at all, regardless of scope. This is already set on
+   >    every call in `server/src/drive.js` — if you're on an older copy
+   >    of this file without it, that's the fix. Widening the scope alone,
+   >    without this flag, reproduces exactly this error.
+   >
+   > **On avoiding full Drive access:** the narrower `drive.file` scope
+   > only works if the app never needs to touch a file it didn't create —
+   > which isn't possible here, since the whole point of
+   > `GOOGLE_DRIVE_FOLDER_ID` is pointing at a folder that already existed
+   > before the app did. Google's real narrow-scope path for that case is
+   > the **Google Picker**: the admin explicitly opens the existing folder
+   > once through a Picker dialog (rather than the app just being told its
+   > ID), which grants `drive.file` access to that specific folder from
+   > then on. That's a real feature to add, not a config toggle — it needs
+   > its own Google API key and a small frontend flow — so it isn't built
+   > here yet. Ask if you want it added.
 4. Make sure the Google account you'll sign in with (the priest's account)
    has edit access to both the Sheet and the Drive folder — since the app
    acts as that signed-in user, not a separate service account. **This
@@ -486,7 +556,7 @@ gets its configuration from a different place. This trips people up, so:
 | `GOOGLE_CLIENT_SECRET` | Your backend host's env panel | Same — and must never leave the server |
 | `GOOGLE_REDIRECT_URI` | Your backend host's env panel | Same |
 | `GOOGLE_SHEET_ID` | Your backend host's env panel | Same |
-| `GOOGLE_DRIVE_FOLDER_ID` | Your backend host's env panel | Same |
+| `GOOGLE_DRIVE_FOLDER_ID` | Your backend host's env panel | **Optional fallback only** — read once until the admin sets both folders in Settings → Drive folders, which then takes over (stored in the Sheet's `Config` tab as `templatesFolderId` and `couplesFolderId`) |
 | `ADMIN_EMAIL` | Your backend host's env panel | Same |
 | `SESSION_SECRET` | Your backend host's env panel | Same |
 | `CLIENT_URL` | Your backend host's env panel | Same |
