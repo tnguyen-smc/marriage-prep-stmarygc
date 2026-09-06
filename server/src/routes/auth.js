@@ -30,6 +30,13 @@ router.get("/google/callback", async (req, res) => {
     const { data: profile } = await oauth2.userinfo.get();
     const emailLower = (profile.email || "").toLowerCase();
 
+    // We already have everything we need from `profile` above — id_token
+    // is a JWT that can run 1-2KB and isn't used for anything here.
+    // cookie-session stores the whole session IN the cookie (see
+    // src/index.js for why), so every byte counts against the ~4KB
+    // browser cookie limit; drop it rather than carry dead weight.
+    delete tokens.id_token;
+
     let role = null;
     let priestName = null;
 
@@ -63,7 +70,8 @@ router.get("/me", (req, res) => {
 });
 
 router.post("/logout", (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
+  req.session = null;
+  res.json({ ok: true });
 });
 
 export default router;

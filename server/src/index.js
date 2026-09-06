@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express from "express";
-import session from "express-session";
+import cookieSession from "cookie-session";
 import cors from "cors";
 import authRoutes from "./routes/auth.js";
 import templateRoutes from "./routes/templates.js";
@@ -32,16 +32,23 @@ app.set("trust proxy", 1);
 
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
 app.use(express.json());
+
+// cookie-session, not express-session: the actual (signed) session data
+// lives in the cookie itself rather than in server memory. This matters
+// on Render's free tier specifically — the process stops entirely after
+// ~15 minutes idle and restarts fresh on the next request, which wipes
+// anything kept in memory. With express-session's default MemoryStore,
+// that meant every hard refresh after any idle period looked signed-out,
+// even with a perfectly valid cookie, because the session it pointed to
+// no longer existed anywhere. Storing the session in the cookie itself
+// makes it immune to the server restarting — nothing to lose.
 app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "dev-secret",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      sameSite: process.env.COOKIE_SAMESITE || "lax",
-      secure: process.env.COOKIE_SECURE === "true",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    },
+  cookieSession({
+    name: "session",
+    keys: [process.env.SESSION_SECRET || "dev-secret"],
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: process.env.COOKIE_SAMESITE || "lax",
+    secure: process.env.COOKIE_SECURE === "true",
   })
 );
 

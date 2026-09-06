@@ -1,4 +1,4 @@
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, PDFName, PDFDict } from "pdf-lib";
 
 // This is the key simplification vs. the old hand-mapped diocese-specific
 // field tables: instead of a human transcribing every field name out of
@@ -23,6 +23,27 @@ function looksTruncated(bytes) {
   return !/%%EOF\s*$/.test(tail);
 }
 
+/** Some PDFs (often ones built in Adobe LiveCycle Designer) use Adobe's
+ *  XFA form format layered inside the PDF instead of, or alongside, a
+ *  plain AcroForm. Acrobat has its own XFA rendering engine and reads
+ *  those fields fine — but pdf-lib (like most non-Adobe PDF libraries)
+ *  only understands the classic AcroForm/Widget structure and sees
+ *  nothing at all, even though the fields are real, properly named, and
+ *  fully fillable in Acrobat. This is the single most common reason a
+ *  "properly named, Adobe reads it fine" PDF still shows zero fields
+ *  here — worth checking for explicitly rather than leaving it as an
+ *  unexplained dead end. */
+function hasXfa(pdfDoc) {
+  try {
+    const acroFormEntry = pdfDoc.catalog.get(PDFName.of("AcroForm"));
+    if (!acroFormEntry) return false;
+    const acroForm = pdfDoc.context.lookup(acroFormEntry);
+    return acroForm instanceof PDFDict && acroForm.has(PDFName.of("XFA"));
+  } catch (_) {
+    return false;
+  }
+}
+
 /** Reads a PDF's real AcroForm fields into a simple, renderable shape. */
 export async function introspectFields(bytes) {
   if (looksTruncated(bytes)) {
@@ -34,7 +55,7 @@ export async function introspectFields(bytes) {
   const pdfDoc = await PDFDocument.load(bytes);
   const form = pdfDoc.getForm();
 
-  return form
+  const fields = form
     .getFields()
     .map((field) => {
       const name = field.getName();
@@ -47,6 +68,14 @@ export async function introspectFields(bytes) {
       return { name, kind: "unsupported" }; // e.g. signature fields — priest signs those by hand
     })
     .filter((f) => f.kind !== "unsupported");
+
+  if (fields.length === 0 && hasXfa(pdfDoc)) {
+    throw new Error(
+      "This PDF uses Adobe's XFA (LiveCycle) form format. Acrobat can read XFA fields, but pdf-lib — and most non-Adobe PDF tools — cannot see them at all, even though they're real and properly named. To fix: in Acrobat, use Prepare Form to rebuild it as a standard fillable PDF (not LiveCycle Designer), or re-save/print-to-PDF the form to strip the XFA layer, then re-upload it in Settings."
+    );
+  }
+
+  return fields;
 }
 
 /**

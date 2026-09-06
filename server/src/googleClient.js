@@ -39,6 +39,7 @@ export function clientFromSession(session) {
   const client = newOAuth2Client();
   if (session.tokens) client.setCredentials(session.tokens);
   client.on("tokens", (tokens) => {
+    delete tokens.id_token; // see auth.js — keeps the session cookie small
     session.tokens = { ...session.tokens, ...tokens };
   });
   return client;

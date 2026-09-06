@@ -708,5 +708,5 @@ Whichever you use:
 
 **Frontend:** React 18, Vite 5, Tailwind 3, `lucide-react`, `pdf-lib`.
 
-**Backend:** Express 4, `express-session`, `googleapis`, `multer`
+**Backend:** Express 4, `cookie-session`, `googleapis`, `multer`
 (file upload handling), `uuid`, `cors`, `dotenv`.
