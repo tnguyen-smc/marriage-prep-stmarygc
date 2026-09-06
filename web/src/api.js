@@ -11,6 +11,17 @@
 export const API_URL =
   import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com";
 
+async function readErrorMessage(res) {
+  const text = await res.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.error) return parsed.error;
+  } catch (_) {
+    // not JSON — fall through to raw text below
+  }
+  return text || `${res.status} ${res.statusText}`;
+}
+ 
 async function apiFetch(path, opts = {}) {
   const isFormData = opts.body instanceof FormData;
   const res = await fetch(`${API_URL}${path}`, {
@@ -21,10 +32,7 @@ async function apiFetch(path, opts = {}) {
       ...(opts.headers || {}),
     },
   });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${text || res.statusText}`);
-  }
+  if (!res.ok) throw new Error(await readErrorMessage(res));
   const contentType = res.headers.get("content-type") || "";
   return contentType.includes("application/json") ? res.json() : res;
 }
@@ -46,7 +54,7 @@ export const api = {
     remove: (id) => apiFetch(`/api/templates/${id}`, { method: "DELETE" }),
     fetchBytes: async (id) => {
       const res = await fetch(`${API_URL}/api/templates/${id}/file`, { credentials: "include" });
-      if (!res.ok) throw new Error(`Could not load template ${id} (${res.status})`);
+      if (!res.ok) throw new Error(await readErrorMessage(res));
       return res.arrayBuffer();
     },
   },
@@ -91,7 +99,7 @@ export const api = {
     templateFile: {
       fetchBytes: async (coupleId, templateId) => {
         const res = await fetch(`${API_URL}/api/couples/${coupleId}/templates/${templateId}/file`, { credentials: "include" });
-        if (!res.ok) throw new Error(`Could not load this couple's copy (${res.status})`);
+        if (!res.ok) throw new Error(await readErrorMessage(res));
         return res.arrayBuffer();
       },
       save: async (coupleId, templateId, bytes) => {
@@ -101,9 +109,10 @@ export const api = {
           headers: { "Content-Type": "application/pdf" },
           body: bytes,
         });
-        if (!res.ok) throw new Error(`Could not save this couple's copy (${res.status})`);
+        if (!res.ok) throw new Error(await readErrorMessage(res));
         return res.json();
       },
     },
   },
 };
+ 

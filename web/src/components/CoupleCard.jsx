@@ -37,9 +37,9 @@ export default function CoupleCard({ couple, onOpen }) {
       </div>
 
       <div className="text-[12px] space-y-0.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
-        {couple.priest && <div>Priest: {couple.priest}</div>}
-        <div>Started prep {formatDate(couple.prepStartDate)}</div>
-        <div>Last appointment {formatDate(couple.lastAppointment)}</div>
+        {couple.priest && <div><span style={{ fontWeight: 600, color: "#6E675C" }}>Priest:</span> {couple.priest}</div>}
+        <div>Started prep: {formatDate(couple.prepStartDate)}</div>
+        <div>Last appointment: {formatDate(couple.lastAppointment)}</div>
         <div>{templateCount} form{templateCount === 1 ? "" : "s"} assigned</div>
         {couple.archived && (
           <div className="mt-1.5 pt-1.5 border-t" style={{ borderColor: "#E4DDD0", color: "#8B3A3A" }}>

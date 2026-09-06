@@ -15,6 +15,7 @@ export function useTemplatePdf(coupleId, templateId, values) {
   const [fields, setFields] = useState([]);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [status, setStatus] = useState("idle"); // idle | loading | ready | error
+  const [errorMessage, setErrorMessage] = useState(null);
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved | error
   const originalBytesRef = useRef(null);
   const urlRef = useRef(null);
@@ -23,6 +24,7 @@ export function useTemplatePdf(coupleId, templateId, values) {
   useEffect(() => {
     setFields([]);
     setPreviewUrl(null);
+    setErrorMessage(null);
     if (!templateId) { setStatus("idle"); return; }
     let cancelled = false;
     setStatus("loading");
@@ -36,7 +38,10 @@ export function useTemplatePdf(coupleId, templateId, values) {
         setFields(f);
         setStatus("ready");
       } catch (e) {
-        if (!cancelled) setStatus("error");
+        if (!cancelled) {
+          setErrorMessage(e.message);
+          setStatus("error");
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -69,5 +74,5 @@ export function useTemplatePdf(coupleId, templateId, values) {
 
   useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current); }, []);
 
-  return { fields, previewUrl, status, saveStatus };
+  return { fields, previewUrl, status, errorMessage, saveStatus };
 }

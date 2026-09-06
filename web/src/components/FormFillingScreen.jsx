@@ -23,7 +23,7 @@ export default function FormFillingScreen({ couple, templates, onBack, onCoupleU
   const saveTimer = useRef(null);
 
   const activeValues = templateData[activeTemplateId] || {};
-  const { fields, previewUrl, status: pdfStatus, saveStatus: driveSaveStatus } = useTemplatePdf(couple.id, activeTemplateId, activeValues);
+  const { fields, previewUrl, status: pdfStatus, errorMessage: pdfErrorMessage, saveStatus: driveSaveStatus } = useTemplatePdf(couple.id, activeTemplateId, activeValues);
   const activeTemplate = assignedTemplates.find((t) => t.id === activeTemplateId);
   const combinedStatus =
     syncStatus === "error" || driveSaveStatus === "error" ? "error" :
@@ -109,7 +109,7 @@ export default function FormFillingScreen({ couple, templates, onBack, onCoupleU
           <div className="max-w-3xl mx-auto px-5 sm:px-10 py-8">
             {activeTemplate && <h2 className="text-[24px] mb-6" style={{ fontFamily: FONT_SERIF, color: ink }}>{activeTemplate.title}</h2>}
             {pdfStatus === "loading" && <div className="text-[14px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Reading this PDF's fields…</div>}
-            {pdfStatus === "error" && <div className="text-[14px]" style={{ color: "#8B3A3A", fontFamily: FONT_SANS }}>Couldn't load this template's PDF.</div>}
+            {pdfStatus === "error" && <div className="text-[14px]" style={{ color: "#8B3A3A", fontFamily: FONT_SANS }}>{pdfErrorMessage || "Couldn't load this template's PDF."}</div>}
             {pdfStatus === "ready" && (
               <div className="pb-16">
                 <DynamicFieldForm fields={fields} values={activeValues} onChange={updateField} />

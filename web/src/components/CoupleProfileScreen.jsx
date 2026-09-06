@@ -8,6 +8,7 @@ import { formatDate, STATUS_STYLES } from "../data/helpers.js";
 import { StatusPill } from "./Shared.jsx";
 import CalendarModal from "./CalendarModal.jsx";
 import ArchiveCoupleModal from "./ArchiveCoupleModal.jsx";
+import UploadDocumentModal from "./UploadDocumentModal.jsx";
 import { api, API_URL } from "../api.js";
 
 /** An inline field that shows text until you tap Edit, then saves on blur. */
@@ -54,11 +55,10 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [addFormOpen, setAddFormOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [justUploaded, setJustUploaded] = useState(null); // name of the most recently uploaded document
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [justUploaded, setJustUploaded] = useState(null); // title of the most recently uploaded document
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const fileRef = useRef(null);
   const successTimer = useRef(null);
 
   const assigned = templates.filter((t) => couple.templateIds.includes(t.id));
@@ -70,20 +70,12 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
     onCoupleUpdated(updated);
   };
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const updated = await api.couples.documents.upload(couple.id, file.name, file);
-      onCoupleUpdated(updated);
-      setJustUploaded(file.name);
-      clearTimeout(successTimer.current);
-      successTimer.current = setTimeout(() => setJustUploaded(null), 5000);
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
+  const handleUpload = async (title, file) => {
+    const updated = await api.couples.documents.upload(couple.id, title, file);
+    onCoupleUpdated(updated);
+    setJustUploaded(title);
+    clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => setJustUploaded(null), 5000);
   };
 
   const removeDoc = async (docId) => {
@@ -164,7 +156,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
 
         {/* Details */}
         <section>
-          <h2 className="text-[16px] mb-4" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Details</h2>
+          <h2 className="text-[16px] mb-4" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Details of Couple</h2>
           <div className="rounded-lg border p-5 grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
             <EditableField label="Groom" value={couple.groom} onSave={(v) => patch({ groom: v })} />
             <EditableField label="Bride" value={couple.bride} onSave={(v) => patch({ bride: v })} />
@@ -177,7 +169,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
             <EditableField label="Last appointment" value={couple.lastAppointment} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ lastAppointment: v })} />
             {isAdmin ? (
               <div>
-                <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest in charge</div>
+                <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
                 <select value={couple.priest || ""} onChange={(e) => patch({ priest: e.target.value })} style={{ ...inputStyle, fontSize: "15px" }}>
                   <option value="">— Select a priest —</option>
                   {priests.filter((p) => p.name.trim()).map((p) => (
@@ -187,7 +179,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
               </div>
             ) : (
               <div>
-                <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest in charge</div>
+                <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
                 <div className="px-3 py-2.5 text-[15px]" style={{ fontFamily: FONT_SANS, color: ink }}>{couple.priest || "—"}</div>
               </div>
             )}
@@ -265,11 +257,10 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[16px]" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Supporting documents</h2>
-            <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-[13px]" style={{ border: "1px solid #E4DDD0", color: ink, fontFamily: FONT_SANS }}>
+            <button onClick={() => setUploadOpen(true)} className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-[13px]" style={{ border: "1px solid #E4DDD0", color: ink, fontFamily: FONT_SANS }}>
               <Upload size={14} />
-              {uploading ? "Uploading…" : "Upload document"}
+              Upload document
             </button>
-            <input ref={fileRef} type="file" onChange={handleUpload} className="hidden" />
           </div>
           <p className="text-[12px] mb-3" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
             Baptismal or confirmation certificates, dispensations, prior-marriage paperwork — anything worth keeping on file.
@@ -354,6 +345,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
           onBack();
         }}
       />
+      <UploadDocumentModal open={uploadOpen} onClose={() => setUploadOpen(false)} onUpload={handleUpload} />
     </div>
   );
 }

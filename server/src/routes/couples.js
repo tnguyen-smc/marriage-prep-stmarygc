@@ -84,7 +84,19 @@ async function ensureCoupleFolder(auth, coupleRow) {
   const legacyFallback = await getConfigValue(auth, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
   const couplesParentId = await getConfigValue(auth, "couplesFolderId", legacyFallback);
 
-  const folderId = await createFolder(auth, `${coupleRow.groom}_${coupleRow.bride}`, couplesParentId || undefined);
+  // Without a parent id, Drive creates the folder in the signed-in
+  // user's personal My Drive root instead of inside the Shared Drive —
+  // invisible to everyone else, and copying a Shared Drive template
+  // file into it can fail outright. Refuse instead of silently
+  // misplacing the couple's files.
+  if (!couplesParentId) {
+    throw Object.assign(
+      new Error('No "Couples folder" is set. Go to Settings → Drive folders and set it before creating a couple\'s files.'),
+      { status: 400 }
+    );
+  }
+
+  const folderId = await createFolder(auth, `${coupleRow.groom}_${coupleRow.bride}`, couplesParentId);
 
   // Mutate the caller's row object in place (rather than spreading it
   // into a new one) so that if the caller goes on to save this same row
@@ -171,16 +183,7 @@ router.post("/", requireAuth, async (req, res) => {
       coupleDriveFolderId: "",
     };
     await appendRow(req.oauth2Client, TAB, HEADER, row);
-
-    // Create the couple's Drive subfolder right away rather than waiting
-    // for the first form to be opened — so it's visible in Drive
-    // immediately after intake, matching what an admin browsing the
-    // Couples folder would expect to see.
-    const { rows: freshRows } = await readRows(req.oauth2Client, TAB);
-    const freshRow = freshRows.find((r) => r.id === row.id);
-    await ensureCoupleFolder(req.oauth2Client, freshRow);
-
-    res.json(parseRow(freshRow));
+    res.json(parseRow(row));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
