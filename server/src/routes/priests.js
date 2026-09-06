@@ -14,7 +14,22 @@ const HEADER = ["id", "title", "name", "email"];
 router.get("/", requireAuth, async (req, res) => {
   try {
     const { rows } = await readRows(req.oauth2Client, TAB);
-    res.json(rows.map(({ _row, ...r }) => r));
+    const result = [];
+    for (const r of rows) {
+      if (r.id) {
+        const { _row, ...rest } = r;
+        result.push(rest);
+        continue;
+      }
+      // A row with no id (e.g. added before the roster had ids at all —
+      // back when it was two fixed "Pastor"/"Parochial Vicar" slots)
+      // can never be matched by PUT/DELETE, which look it up by id. Give
+      // it one now rather than leaving it permanently un-editable.
+      const healed = { id: uuid(), title: r.title || "", name: r.name || "", email: r.email || "" };
+      await updateRow(req.oauth2Client, TAB, r._row, HEADER, healed);
+      result.push(healed);
+    }
+    res.json(result);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
