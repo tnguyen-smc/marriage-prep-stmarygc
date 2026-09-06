@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd docs
-          npm ci
+          npm install
 
       - name: Build project
         env:
