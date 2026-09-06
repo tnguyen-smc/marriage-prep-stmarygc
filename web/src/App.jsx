@@ -89,7 +89,6 @@ export default function App() {
           couple={couple}
           templates={templates}
           onBack={() => go(`/couples/${couple.slug}`)}
-          onCoupleUpdated={handleCoupleUpdated}
         />
       );
     }

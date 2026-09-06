@@ -3,11 +3,17 @@
 A priest-facing app for Catholic marriage prep counseling sessions. Priests
 sign in with their real Google account. In **Settings**, they upload any
 fillable PDF (diocesan form, canonical form, whatever) and give it a title.
-At intake, they check off which of those forms a couple needs. In the
-form-filling screen, the app reads that PDF's *real* fields — whatever they
-are — and builds an editor for them on the spot, with a live "Preview PDF"
-that fills the actual file using `pdf-lib`, without flattening it, so it
-stays editable in Adobe/Drive afterward.
+At intake, they check off which of those forms a couple needs.
+
+In the form-filling screen, the priest fills the form out directly in
+their browser's own PDF viewer — the same one Chrome/Firefox use for any
+PDF, which already knows how to read and fill real AcroForm fields. When
+done, they use the viewer's own download button to get the filled copy
+onto their device, then choose that file in the app and hit **Save**,
+which uploads it straight over that couple's copy in Drive. There's no
+PDF-parsing library in this app at all — the browser does all the actual
+form-filling work, and the app's job is just to show the couple's copy and
+save whatever comes back.
 
 Couples and templates are stored in a real Google Sheet. Uploaded PDFs live
 in a real Google Drive folder. Login is real Google OAuth.
@@ -85,10 +91,7 @@ this is now two pieces:
 │       ├── api.js                  # the ONLY file that knows backend URLs
 │       ├── theme.js                # colors/fonts — edit here to re-skin
 │       ├── data/helpers.js         # dates, name-splitting, sorting
-│       ├── lib/pdfForm.js          # generic PDF field read/fill (pdf-lib)
-│       ├── hooks/
-│       │   ├── useTemplatePdf.js   # loads a couple's PDF copy + live preview
-│       │   └── useRoute.js         # ~40-line router (no react-router dep)
+│       ├── hooks/useRoute.js       # ~40-line router (no react-router dep)
 │       └── components/
 │           ├── LoginScreen.jsx
 │           ├── DirectoryScreen.jsx
@@ -96,9 +99,11 @@ this is now two pieces:
 │           ├── CoupleProfileScreen.jsx   # /couples/<slug> — the profile card
 │           ├── IntakeModal.jsx           # assigns uploaded templates
 │           ├── SettingsScreen.jsx        # templates + priest roster
-│           ├── FormFillingScreen.jsx     # /couples/<slug>/forms
-│           ├── DynamicFieldForm.jsx      # renders whatever fields a PDF has
-│           ├── PdfPreviewModal.jsx
+│           ├── FormFillingScreen.jsx     # /couples/<slug>/forms — shows
+│           │                            # the couple's PDF in the browser's
+│           │                            # own viewer; Save uploads the
+│           │                            # priest's filled copy to Drive
+│           ├── UploadDocumentModal.jsx
 │           ├── CalendarModal.jsx         # real Google Calendar event creator
 │           ├── ArchiveCoupleModal.jsx
 │           ├── TopBar.jsx
@@ -128,7 +133,7 @@ this is now two pieces:
 |---|---|
 | Change colors/fonts | `web/src/theme.js` |
 | Change filter tabs or sort options | `web/src/data/helpers.js`, `web/src/components/DirectoryScreen.jsx` |
-| Change how a PDF field is labeled/rendered | `web/src/components/DynamicFieldForm.jsx` |
+| Change how the form-filling screen looks | `web/src/components/FormFillingScreen.jsx` |
 | Change what's stored per couple | `server/src/routes/couples.js` (`HEADER`) + matching Sheet columns |
 | Add a new API endpoint | `server/src/routes/*.js` |
 
@@ -158,27 +163,38 @@ this is now two pieces:
     subfolder and every file in it untouched — Archive is the everyday
     tool; Delete is for genuine mistakes (e.g. a duplicate test entry).
   - `templateIds` is a comma-separated list of assigned template ids.
-  - `templateData` is **one JSON blob**: `{ "<templateId>": { "<pdf field
-    name>": "value" } }` — what the priest has typed, used to repopulate
-    the on-screen form instantly.
+  - `templateData` is **currently unused by the UI** — an earlier version
+    of this app parsed a PDF's fields into an on-screen form and stored
+    typed values here per field. The form-filling screen now works
+    differently (see below), so nothing writes to this column anymore;
+    it's left in the schema in case a future version wants it back rather
+    than requiring a Sheet restructure now.
   - `coupleDriveFolderId` is this couple's own Drive subfolder, created
     the first time they need one (see section 5, "Drive folder
     structure"). Every file below is stored inside it.
   - `templateCopies` is **a JSON blob**: `{ "<templateId>": "<driveFileId>"
     }` — the id of this couple's *own* Drive copy of that template, made
-    on first open, living in their subfolder. Fills only ever write to
+    on first open, living in their subfolder. Saves only ever overwrite
     that copy; the master uploaded in Settings is never touched.
   - `documents` is **a JSON array**: `[ { id, name, driveFileId,
     webViewLink, uploadedAt } ]` — supporting files the priest uploads to
     the couple (baptismal certificates, dispensations, scans), stored in
     that same subfolder.
 
-- **No hardcoded field maps.** Older prototypes of this app hand-transcribed
-  every field name out of one specific diocesan PDF. That doesn't scale to
-  "upload any PDF," so `web/src/lib/pdfForm.js` now asks `pdf-lib` what
-  fields a PDF actually has, at runtime, and builds the editor from that.
-  This is both the feature you asked for and a real simplification — it
-  deleted roughly 250 lines of hand-maintained mapping tables.
+- **Real PDF rendering, no `pdf-lib`.** An earlier version of this app used
+  `pdf-lib` to read a PDF's AcroForm fields and build an on-screen editor
+  for them. That worked for well-formed PDFs, but ran into real problems:
+  some diocesan PDFs use Adobe's XFA form format, which `pdf-lib` can't
+  read at all even though Acrobat can, and every keystroke re-filling and
+  re-uploading the whole PDF burned through hosting bandwidth fast. The
+  form-filling screen now renders the couple's PDF directly with
+  **PDF.js** (`pdfjs-dist`) — the same engine behind Chrome/Firefox's
+  built-in viewers — with a real, interactive form layer laid over a
+  canvas rendering of each page. Typing into a field writes into PDF.js's
+  own `annotationStorage`; hitting Save calls `pdfDoc.saveDocument()` to
+  get the filled bytes back in memory and uploads them once. See section
+  7a for the full mechanics and why an even simpler `<iframe>`-based
+  approach was tried and dropped first.
 
 ---
 
@@ -371,8 +387,10 @@ Clicking a couple card opens their **profile card**, which holds:
   edit-in-place: tap the value, type, and it saves to the Sheet on blur.
 - **Fillable forms** — the templates assigned to them. "Add form" picks
   from anything uploaded in Settings; "Fill out forms" opens the
-  form-filling screen at `/couples/<slug>/forms`. Each row shows whether
-  that form has been started, and links to the couple's own PDF copy.
+  form-filling screen at `/couples/<slug>/forms`, where the priest fills
+  the form directly in their browser's own PDF viewer and saves the
+  result back to Drive (see section 8a). Each row also links straight to
+  the couple's own PDF copy for a quick look without opening that screen.
 - **Supporting documents** — upload baptismal or confirmation
   certificates, dispensations, prior-marriage paperwork, or scans. These
   go to the same Drive folder and are listed with a link to view and a
@@ -385,6 +403,53 @@ Clicking a couple card opens their **profile card**, which holds:
 > The build script copies `index.html` to `404.html`, which is GitHub
 > Pages' standard SPA fallback — the app boots and reads the path itself.
 > Nothing extra to configure.
+
+---
+
+## 7a. Filling out a form: edited directly in the page, no download step
+
+`/couples/<slug>/forms` shows the couple's assigned templates as a list
+down the left side. Picking one loads **that couple's own copy** (never
+the shared master — see `ensureCoupleCopy` in `routes/couples.js`) and
+renders it directly in the page using **PDF.js** (`pdfjs-dist`) — the same
+rendering engine underlying Chrome and Firefox's built-in PDF viewers, but
+used here as a library we control, not the browser's native plugin.
+
+Each page is drawn to a `<canvas>`, and PDF.js's own `AnnotationLayer`
+overlays real, interactive form elements — genuine `<input>`s and
+`<select>`s — positioned exactly over their fields. The priest taps a
+field and types right there on the page; every keystroke writes into
+PDF.js's `annotationStorage`, an in-memory record of every edit across the
+whole document.
+
+Hitting **Save to Drive**:
+
+1. Calls `pdfDoc.saveDocument()` — a PDF.js method that reads
+   `annotationStorage` and produces the filled PDF's bytes, entirely in
+   memory, in the browser. No file is downloaded at any point.
+2. Uploads those bytes over the couple's copy in Drive —
+   `PUT /api/couples/:id/templates/:templateId/file`, which just calls
+   `updateFileBytes`. The backend never parses the PDF; it's a
+   byte-for-byte overwrite either way, same as before.
+
+This replaced an earlier version that first tried a plain `<iframe>`
+pointing at the browser's native viewer. That worked for viewing and even
+for filling fields, but browsers deliberately don't expose a JavaScript
+API into an embedded native viewer's internal state — there was no way to
+read back what the priest typed without asking them to manually download
+their filled copy and re-upload it. Using PDF.js as a library instead of
+relying on the native plugin is what closes that gap: because *we* render
+the page and *we* own the annotation layer, `annotationStorage` and
+`saveDocument()` give direct, in-memory access to every edit.
+
+`pdf-lib` (a different, unrelated library despite the similar name) still
+isn't used anywhere in this app — see the note in section 3 for why it
+was removed in the first place (XFA-format PDFs it couldn't read, and
+bandwidth burned re-uploading the whole file on every keystroke in an
+even earlier version). PDF.js doesn't share that XFA limitation as
+cleanly either, but it's the same rendering engine real browsers already
+rely on for arbitrary real-world PDFs, so compatibility should generally
+be as good as it gets without Adobe's own software.
 
 ---
 
@@ -683,11 +748,10 @@ Whichever you use:
   assigned** (made automatically the first time a priest opens that tab),
   so filling one couple's answers in can never overwrite the master file
   or bleed into another couple's copy.
-- PDF field introspection and live-fill via `pdf-lib` — genuinely reads
-  and writes whatever PDF you upload, not a mockup.
-- Autosave of a couple's answers to the Sheet (debounced ~800ms) **and**
-  to that couple's own Drive PDF copy (debounced ~350ms) whenever the
-  priest stops typing.
+- **The couple's PDF is rendered and filled directly in the page** via
+  PDF.js — real canvas rendering, a real interactive form layer, and
+  Save reads back every edit in memory and uploads it once. No local
+  download step, no separate parsing library (see section 7a).
 - **Real Google Calendar events** for the next session — the couple is
   invited as a guest and the description links back to their profile card
   (see section 8).
@@ -706,7 +770,7 @@ Whichever you use:
 
 ## 14. Dependencies
 
-**Frontend:** React 18, Vite 5, Tailwind 3, `lucide-react`, `pdf-lib`.
+**Frontend:** React 18, Vite 5, Tailwind 3, `lucide-react`, `pdfjs-dist`.
 
 **Backend:** Express 4, `cookie-session`, `googleapis`, `multer`
 (file upload handling), `uuid`, `cors`, `dotenv`.
