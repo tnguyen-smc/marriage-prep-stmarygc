@@ -19,7 +19,7 @@ const HEADER = [
   "prepStartDate", "lastAppointment", "status", "drivePath",
   "templateIds", "templateData", "priest",
   "archived", "archivedReason", "archivedAt",
-  "templateCopies", "documents", "coupleDriveFolderId",
+  "templateCopies", "documents", "coupleDriveFolderId", "checklist",
 ];
 
 // JSON-blob columns (templateData, templateCopies, documents) keep the
@@ -35,6 +35,7 @@ function parseRow(r) {
     templateData: r.templateData ? JSON.parse(r.templateData) : {},
     templateCopies: r.templateCopies ? JSON.parse(r.templateCopies) : {},
     documents: r.documents ? JSON.parse(r.documents) : [],
+    checklist: r.checklist ? JSON.parse(r.checklist) : { requirements: {}, meetings: {} },
     archived: r.archived === "true" || r.archived === true,
   };
 }
@@ -208,6 +209,7 @@ router.post("/", requireAuth, async (req, res) => {
       templateCopies: "{}",
       documents: "[]",
       coupleDriveFolderId: "",
+      checklist: JSON.stringify({ requirements: {}, meetings: {} }),
     };
     await appendRow(req.oauth2Client, TAB, HEADER, row);
     res.json(parseRow(row));
@@ -227,6 +229,7 @@ router.patch("/:idOrSlug", requireAuth, async (req, res) => {
     if (req.body.templateData) updated.templateData = JSON.stringify(req.body.templateData);
     if (req.body.templateCopies) updated.templateCopies = JSON.stringify(req.body.templateCopies);
     if (req.body.documents) updated.documents = JSON.stringify(req.body.documents);
+    if (req.body.checklist) updated.checklist = JSON.stringify(req.body.checklist);
     if (typeof req.body.archived === "boolean") updated.archived = req.body.archived ? "true" : "false";
 
     // Names changed -> refresh the slug so the URL keeps matching, but

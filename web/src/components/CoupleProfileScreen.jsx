@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import {
-  ChevronLeft, Calendar, Mail, Phone, FileText, Upload, Trash2,
-  Plus, Check, Pencil, Archive, ExternalLink, Link2
+  ChevronLeft, ChevronDown, ChevronUp, Calendar, Mail, Phone, FileText, Upload, Trash2,
+  Plus, Check, Pencil, Archive, ExternalLink, Link2, ClipboardList
 } from "lucide-react";
 import { ink, sage, bronze, brick, FONT_SERIF, FONT_SANS, inputStyle } from "../theme.js";
 import { formatDate, STATUS_STYLES } from "../data/helpers.js";
@@ -10,6 +10,29 @@ import CalendarModal from "./CalendarModal.jsx";
 import ArchiveCoupleModal from "./ArchiveCoupleModal.jsx";
 import UploadDocumentModal from "./UploadDocumentModal.jsx";
 import { api, API_URL } from "../api.js";
+
+// From the diocese's own "Checklist for Marriage Preparation" spreadsheet.
+// Fixed lists (not admin-editable templates) — these are the two tables
+// on that sheet, minus the name/contact-info rows and the schedule
+// button, which aren't needed here since that information already lives
+// on this same profile page.
+const REQUIREMENTS_ITEMS = [
+  { key: "greenWitnessForm", label: "Green Witness Form" },
+  { key: "baptismalForms", label: "Recent Baptismal Form for both parties, with notations (within 6 months)" },
+  { key: "civilMarriageAct", label: "Civil Act of Marriage (at least one week before the wedding)" },
+  { key: "prepareEnrich", label: "Complete Prepare & Enrich Assessment by email" },
+  { key: "weddingLiturgy", label: "Wedding Liturgy Planning Sheet (readings and ministers)" },
+  { key: "engagedEncounter", label: "Engaged Encounter Retreat, or 3–5 sessions with mentor couples" },
+  { key: "nfpWorkshop", label: "Natural Family Planning (NFP) Workshop with Diocese" },
+];
+
+const MEETINGS_ITEMS = [
+  { key: "prenuptialForm", label: "Prenuptial Form" },
+  { key: "peResults", label: "P & E Results" },
+  { key: "formed1_2", label: "FORMED 1 & 2" },
+  { key: "formed3_4", label: "FORMED 3 & 4" },
+  { key: "vows", label: "Vows" },
+];
 
 /** An inline field that shows text until you tap Edit, then saves on blur. */
 function EditableField({ label, value, type = "text", icon, onSave }) {
@@ -51,7 +74,54 @@ function EditableField({ label, value, type = "text", icon, onSave }) {
   );
 }
 
+/** One row of the Requirements Checklist: label, a date picker, and a
+ *  notes field that only saves on blur (not per keystroke) — dates are
+ *  cheap, single discrete events, but a note could be a full sentence
+ *  and shouldn't fire a save on every character typed. */
+function RequirementRow({ item, value, onSave }) {
+  const [notes, setNotes] = useState(value?.notes || "");
+
+  const commitNotes = () => {
+    if (notes !== (value?.notes || "")) onSave(item.key, { ...value, notes });
+  };
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr,150px,1fr] gap-3 items-start py-3.5 px-4 border-b last:border-b-0" style={{ borderColor: "#E4DDD0" }}>
+      <div className="text-[14px] pt-2" style={{ fontFamily: FONT_SANS, color: ink }}>{item.label}</div>
+      <input
+        type="date"
+        value={value?.dateCompleted || ""}
+        onChange={(e) => onSave(item.key, { ...value, dateCompleted: e.target.value })}
+        style={{ ...inputStyle, fontSize: "13px", padding: "9px 10px" }}
+      />
+      <input
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        onBlur={commitNotes}
+        placeholder=""
+        style={{ ...inputStyle, fontSize: "13px", padding: "9px 10px" }}
+      />
+    </div>
+  );
+}
+
+/** One row of Meetings with Priest: label + date only, no notes. */
+function MeetingRow({ item, value, onSave }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-[1fr,150px] gap-3 items-center py-3.5 px-4 border-b last:border-b-0" style={{ borderColor: "#E4DDD0" }}>
+      <div className="text-[14px]" style={{ fontFamily: FONT_SANS, color: ink }}>{item.label}</div>
+      <input
+        type="date"
+        value={value?.dateCompleted || ""}
+        onChange={(e) => onSave(item.key, e.target.value)}
+        style={{ ...inputStyle, fontSize: "13px", padding: "9px 10px" }}
+      />
+    </div>
+  );
+}
+
 export default function CoupleProfileScreen({ couple, templates, priests, isAdmin, onBack, onOpenForms, onCoupleUpdated, onCoupleDeleted }) {
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [addFormOpen, setAddFormOpen] = useState(false);
@@ -64,10 +134,19 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
   const assigned = templates.filter((t) => couple.templateIds.includes(t.id));
   const unassigned = templates.filter((t) => !couple.templateIds.includes(t.id));
   const profileUrl = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/couples/${couple.slug}`;
+  const checklist = couple.checklist || { requirements: {}, meetings: {} };
 
   const patch = async (payload) => {
     const updated = await api.couples.update(couple.id, payload);
     onCoupleUpdated(updated);
+  };
+
+  const saveRequirement = (key, value) => {
+    patch({ checklist: { ...checklist, requirements: { ...checklist.requirements, [key]: value } } });
+  };
+
+  const saveMeeting = (key, dateCompleted) => {
+    patch({ checklist: { ...checklist, meetings: { ...checklist.meetings, [key]: { dateCompleted } } } });
   };
 
   const handleUpload = async (title, file) => {
@@ -154,35 +233,63 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
           </div>
         )}
 
-        {/* Details */}
+        {/* Details — collapsible */}
         <section>
           <h2 className="text-[16px] mb-4" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Details of Couple</h2>
-          <div className="rounded-lg border p-5 grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-            <EditableField label="Groom" value={couple.groom} onSave={(v) => patch({ groom: v })} />
-            <EditableField label="Bride" value={couple.bride} onSave={(v) => patch({ bride: v })} />
-            <EditableField label="Groom's email" value={couple.groomEmail} icon={<Mail size={12} />} onSave={(v) => patch({ groomEmail: v })} />
-            <EditableField label="Bride's email" value={couple.brideEmail} icon={<Mail size={12} />} onSave={(v) => patch({ brideEmail: v })} />
-            <EditableField label="Groom's phone" value={couple.groomPhone} icon={<Phone size={12} />} onSave={(v) => patch({ groomPhone: v })} />
-            <EditableField label="Bride's phone" value={couple.bridePhone} icon={<Phone size={12} />} onSave={(v) => patch({ bridePhone: v })} />
-            <EditableField label="Started prep" value={couple.prepStartDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ prepStartDate: v })} />
-            <EditableField label="Wedding date" value={couple.weddingDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ weddingDate: v })} />
-            <EditableField label="Last appointment" value={couple.lastAppointment} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ lastAppointment: v })} />
-            {isAdmin ? (
-              <div>
-                <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
-                <select value={couple.priest || ""} onChange={(e) => patch({ priest: e.target.value })} style={{ ...inputStyle, fontSize: "15px" }}>
-                  <option value="">— Select a priest —</option>
-                  {priests.filter((p) => p.name.trim()).map((p) => (
-                    <option key={p.id} value={p.name}>{p.name} ({p.title})</option>
-                  ))}
-                </select>
+          <div className="rounded-lg border" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+            {!detailsExpanded ? (
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Groom</div>
+                  <div className="text-[15px]" style={{ fontFamily: FONT_SANS, color: ink }}>{couple.groom || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Bride</div>
+                  <div className="text-[15px]" style={{ fontFamily: FONT_SANS, color: ink }}>{couple.bride || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
+                  <div className="text-[15px]" style={{ fontFamily: FONT_SANS, color: ink }}>{couple.priest || "—"}</div>
+                </div>
               </div>
             ) : (
-              <div>
-                <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
-                <div className="px-3 py-2.5 text-[15px]" style={{ fontFamily: FONT_SANS, color: ink }}>{couple.priest || "—"}</div>
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <EditableField label="Groom" value={couple.groom} onSave={(v) => patch({ groom: v })} />
+                <EditableField label="Bride" value={couple.bride} onSave={(v) => patch({ bride: v })} />
+                <EditableField label="Groom's email" value={couple.groomEmail} icon={<Mail size={12} />} onSave={(v) => patch({ groomEmail: v })} />
+                <EditableField label="Bride's email" value={couple.brideEmail} icon={<Mail size={12} />} onSave={(v) => patch({ brideEmail: v })} />
+                <EditableField label="Groom's phone" value={couple.groomPhone} icon={<Phone size={12} />} onSave={(v) => patch({ groomPhone: v })} />
+                <EditableField label="Bride's phone" value={couple.bridePhone} icon={<Phone size={12} />} onSave={(v) => patch({ bridePhone: v })} />
+                <EditableField label="Started prep" value={couple.prepStartDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ prepStartDate: v })} />
+                <EditableField label="Wedding date" value={couple.weddingDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ weddingDate: v })} />
+                <EditableField label="Last appointment" value={couple.lastAppointment} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ lastAppointment: v })} />
+                {isAdmin ? (
+                  <div>
+                    <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
+                    <select value={couple.priest || ""} onChange={(e) => patch({ priest: e.target.value })} style={{ ...inputStyle, fontSize: "15px" }}>
+                      <option value="">— Select a priest —</option>
+                      {priests.filter((p) => p.name.trim()).map((p) => (
+                        <option key={p.id} value={p.name}>{p.name} ({p.title})</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
+                    <div className="px-3 py-2.5 text-[15px]" style={{ fontFamily: FONT_SANS, color: ink }}>{couple.priest || "—"}</div>
+                  </div>
+                )}
               </div>
             )}
+            <div className="flex justify-end px-5 pb-4">
+              <button
+                onClick={() => setDetailsExpanded((v) => !v)}
+                className="flex items-center gap-1.5 text-[12px]"
+                style={{ color: "#6E675C", fontFamily: FONT_SANS }}
+              >
+                {detailsExpanded ? <><ChevronUp size={13} /> View less</> : <><ChevronDown size={13} /> View more</>}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -251,6 +358,41 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
               })}
             </div>
           )}
+
+          {/* Checklist — from the diocese's Marriage Preparation checklist spreadsheet */}
+          <div className="mt-6">
+            <div className="flex items-center gap-2 mb-4">
+              <ClipboardList size={16} color={bronze} />
+              <h3 className="text-[15px]" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Checklist</h3>
+            </div>
+
+            <div className="mb-6">
+              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>REQUIREMENTS CHECKLIST</div>
+              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+                <div className="hidden sm:grid grid-cols-[1fr,150px,1fr] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
+                  <span>REQUIREMENT</span>
+                  <span>DATE COMPLETED</span>
+                  <span>NOTES</span>
+                </div>
+                {REQUIREMENTS_ITEMS.map((item) => (
+                  <RequirementRow key={item.key} item={item} value={checklist.requirements?.[item.key]} onSave={saveRequirement} />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>MEETINGS WITH PRIEST</div>
+              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+                <div className="hidden sm:grid grid-cols-[1fr,150px] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
+                  <span>MEETING</span>
+                  <span>DATE COMPLETED</span>
+                </div>
+                {MEETINGS_ITEMS.map((item) => (
+                  <MeetingRow key={item.key} item={item} value={checklist.meetings?.[item.key]} onSave={saveMeeting} />
+                ))}
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Supporting documents */}
