@@ -29,14 +29,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm' # Remove or comment out if you don't have a root package-lock.json
+          node-version: 24
 
       - name: Build frontend static files
         run: |
-          # Adjust commands if your frontend code sits in a subdirectory (e.g., cd client && npm ci && npm run build)
-          npm ci
-          npm run build
+          npm install
+          npm run build --if-present
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -45,7 +43,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # Point this to your build output folder (e.g., dist, build, or root '.')
-          path: './dist'
+          path: '.'
 
       - name: Deploy to GitHub Pages
         id: deployment
