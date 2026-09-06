@@ -23,6 +23,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 function PdfPage({ pdfDoc, pageNumber, containerWidth }) {
   const canvasRef = useRef(null);
   const layerRef = useRef(null);
+  const pageDivRef = useRef(null);
   const renderTaskRef = useRef(null);
 
   useEffect(() => {
@@ -38,10 +39,24 @@ function PdfPage({ pdfDoc, pageNumber, containerWidth }) {
 
       const canvas = canvasRef.current;
       const layerDiv = layerRef.current;
-      if (!canvas || !layerDiv) return;
+      const pageDiv = pageDivRef.current;
+      if (!canvas || !layerDiv || !pageDiv) return;
+
+      // PDF.js's own CSS (pdf_viewer.css) only defines --scale-factor,
+      // --total-scale-factor, and --scale-round-x/y on elements matching
+      // the selector ".pdfViewer .page" — outside its full reference
+      // viewer, nothing sets those, so every calc()/round() expression
+      // that depends on them (which is most of the annotation layer's
+      // sizing and positioning) resolves to nothing, collapsing the
+      // whole form layer down to a sliver. Matching that exact class
+      // structure and setting --scale-factor ourselves is what makes
+      // the real fix, not a workaround.
+      pageDiv.style.setProperty("--scale-factor", String(scale));
 
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
 
       if (renderTaskRef.current) renderTaskRef.current.cancel();
       const renderTask = page.render({ canvasContext: canvas.getContext("2d"), viewport });
@@ -55,8 +70,6 @@ function PdfPage({ pdfDoc, pageNumber, containerWidth }) {
       if (cancelled) return;
 
       layerDiv.innerHTML = "";
-      layerDiv.style.width = `${viewport.width}px`;
-      layerDiv.style.height = `${viewport.height}px`;
 
       const annotations = await page.getAnnotations({ intent: "display" });
       if (cancelled) return;
@@ -77,9 +90,11 @@ function PdfPage({ pdfDoc, pageNumber, containerWidth }) {
   }, [pdfDoc, pageNumber, containerWidth]);
 
   return (
-    <div className="relative inline-block shadow-sm bg-white mx-auto">
-      <canvas ref={canvasRef} />
-      <div ref={layerRef} className="annotationLayer absolute top-0 left-0" />
+    <div className="pdfViewer mx-auto" style={{ width: "fit-content" }}>
+      <div ref={pageDivRef} className="page relative shadow-sm bg-white" style={{ width: "fit-content" }}>
+        <canvas ref={canvasRef} className="block" />
+        <div ref={layerRef} className="annotationLayer absolute top-0 left-0" />
+      </div>
     </div>
   );
 }
@@ -178,6 +193,25 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
         </div>
         {loadStatus === "ready" && (
           <div className="flex items-center gap-3 flex-shrink-0">
+            {numPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
+                  disabled={pageNumber <= 1}
+                  className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30"
+                >
+                  <ChevronLeft size={16} color={ink} />
+                </button>
+                <span className="text-[13px] whitespace-nowrap" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Page {pageNumber} of {numPages}</span>
+                <button
+                  onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
+                  disabled={pageNumber >= numPages}
+                  className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30"
+                >
+                  <ChevronRightIcon size={16} color={ink} />
+                </button>
+              </div>
+            )}
             {saveStatus === "saved" && (
               <span className="hidden sm:flex items-center gap-1.5 text-[13px]" style={{ color: sage, fontFamily: FONT_SANS }}>
                 <Check size={14} /> Saved to Drive
@@ -189,7 +223,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
             <button
               onClick={handleSave}
               disabled={saveStatus === "saving"}
-              className="px-5 py-2.5 rounded-lg text-white text-[14px]"
+              className="px-5 py-2.5 rounded-lg text-white text-[14px] flex-shrink-0"
               style={{ background: bronze, fontFamily: FONT_SANS }}
             >
               {saveStatus === "saving" ? "Saving…" : "Save to Drive"}
@@ -239,28 +273,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
               <div className="text-[14px] py-6" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Choose a form on the left to get started.</div>
             )}
             {loadStatus === "ready" && pdfDoc && containerWidth > 0 && (
-              <>
-                <PdfPage pdfDoc={pdfDoc} pageNumber={pageNumber} containerWidth={containerWidth} />
-                {numPages > 1 && (
-                  <div className="flex items-center justify-center gap-4 mt-4">
-                    <button
-                      onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-                      disabled={pageNumber <= 1}
-                      className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30"
-                    >
-                      <ChevronLeft size={18} color={ink} />
-                    </button>
-                    <span className="text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Page {pageNumber} of {numPages}</span>
-                    <button
-                      onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
-                      disabled={pageNumber >= numPages}
-                      className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30"
-                    >
-                      <ChevronRightIcon size={18} color={ink} />
-                    </button>
-                  </div>
-                )}
-              </>
+              <PdfPage pdfDoc={pdfDoc} pageNumber={pageNumber} containerWidth={containerWidth} />
             )}
           </div>
         </div>

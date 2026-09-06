@@ -9,7 +9,7 @@ import IntakeModal from "./IntakeModal.jsx";
 const TABS = ["In Progress", "Completed", "Archived", "All"];
 
 export default function DirectoryScreen({ couples, templates, priests, profile, onOpenCouple, onLogout, onSettings, onCreateCouple }) {
-  const [filter, setFilter] = useState("All");
+  const [filter, setFilter] = useState("In Progress");
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [sortKey, setSortKey] = useState("weddingClosest");
