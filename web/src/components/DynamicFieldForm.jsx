@@ -51,7 +51,6 @@ export default function DynamicFieldForm({ fields, values, onChange }) {
               value={values[f.name] || ""}
               onChange={(e) => onChange(f.name, e.target.value)}
               style={{ ...inputStyle, fontSize: "16px", padding: "14px 16px" }}
-              placeholder="Tap to enter"
             />
           )}
         </div>

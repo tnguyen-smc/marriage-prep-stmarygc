@@ -3,13 +3,20 @@ import { google } from "googleapis";
 
 // Scopes we ask the priest to grant on first login:
 // - identify who they are (email/profile)
-// - drive.file: only files THIS app creates/opens — not their whole Drive
+// - drive: full Drive access for THIS account. We need this, not the
+//   narrower drive.file, because GOOGLE_DRIVE_FOLDER_ID points at a
+//   folder the admin created by hand in Drive's own UI before the app
+//   ever touched it. drive.file only grants visibility into files/folders
+//   the app itself created or that were opened through Google's file
+//   picker — it CANNOT see a pre-existing folder just because you know
+//   its ID. Using drive.file here fails every upload with a misleading
+//   "File not found: <folder id>" error, even when the id is correct.
 // - spreadsheets: read/write the one Sheet we use as the database
 export const SCOPES = [
   "openid",
   "email",
   "profile",
-  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/calendar.events",
 ];

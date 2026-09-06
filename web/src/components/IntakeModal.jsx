@@ -3,7 +3,11 @@ import { X } from "lucide-react";
 import { ink, parchment, FONT_SERIF, FONT_SANS, inputStyle } from "../theme.js";
 import { Field, ToggleSwitch } from "./Shared.jsx";
 
-const emptyForm = { groom: "", bride: "", email: "", phone: "", weddingDate: "", priest: "", templateIds: {} };
+const emptyForm = {
+  groom: "", groomEmail: "", groomPhone: "",
+  bride: "", brideEmail: "", bridePhone: "",
+  weddingDate: "", priest: "", templateIds: {},
+};
 
 export default function IntakeModal({ open, onClose, onCreate, templates, priests, profile }) {
   const [form, setForm] = useState(emptyForm);
@@ -23,7 +27,17 @@ export default function IntakeModal({ open, onClose, onCreate, templates, priest
 
   const handleSubmit = () => {
     const templateIds = Object.entries(form.templateIds).filter(([, on]) => on).map(([id]) => id);
-    onCreate({ groom: form.groom.trim(), bride: form.bride.trim(), email: form.email.trim(), phone: form.phone.trim(), weddingDate: form.weddingDate, priest: form.priest.trim(), templateIds });
+    onCreate({
+      groom: form.groom.trim(),
+      groomEmail: form.groomEmail.trim(),
+      groomPhone: form.groomPhone.trim(),
+      bride: form.bride.trim(),
+      brideEmail: form.brideEmail.trim(),
+      bridePhone: form.bridePhone.trim(),
+      weddingDate: form.weddingDate,
+      priest: form.priest.trim(),
+      templateIds,
+    });
     onClose();
   };
 
@@ -35,13 +49,17 @@ export default function IntakeModal({ open, onClose, onCreate, templates, priest
           <button type="button" onClick={onClose} className="p-2 rounded-full hover:bg-black/5"><X size={20} color={ink} /></button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-          <Field label="Groom's full name"><input value={form.groom} onChange={(e) => setForm({ ...form, groom: e.target.value })} style={inputStyle} placeholder="e.g. Michael Alvarez" /></Field>
-          <Field label="Bride's full name"><input value={form.bride} onChange={(e) => setForm({ ...form, bride: e.target.value })} style={inputStyle} placeholder="e.g. Teresa Nguyen" /></Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+          <Field label="Groom's full name"><input value={form.groom} onChange={(e) => setForm({ ...form, groom: e.target.value })} style={inputStyle} /></Field>
+          <Field label="Bride's full name"><input value={form.bride} onChange={(e) => setForm({ ...form, bride: e.target.value })} style={inputStyle} /></Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+          <Field label="Groom's email"><input value={form.groomEmail} onChange={(e) => setForm({ ...form, groomEmail: e.target.value })} style={inputStyle} /></Field>
+          <Field label="Bride's email"><input value={form.brideEmail} onChange={(e) => setForm({ ...form, brideEmail: e.target.value })} style={inputStyle} /></Field>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-          <Field label="Contact email"><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inputStyle} placeholder="couple@email.com" /></Field>
-          <Field label="Contact phone"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={inputStyle} placeholder="(620) 555-0110" /></Field>
+          <Field label="Groom's phone"><input value={form.groomPhone} onChange={(e) => setForm({ ...form, groomPhone: e.target.value })} style={inputStyle} /></Field>
+          <Field label="Bride's phone"><input value={form.bridePhone} onChange={(e) => setForm({ ...form, bridePhone: e.target.value })} style={inputStyle} /></Field>
         </div>
         <div className="mb-5">
           <Field label="Target wedding date"><input type="date" value={form.weddingDate} onChange={(e) => setForm({ ...form, weddingDate: e.target.value })} style={{ ...inputStyle, width: "220px" }} /></Field>
@@ -51,7 +69,7 @@ export default function IntakeModal({ open, onClose, onCreate, templates, priest
             {isAdmin ? (
               <select value={form.priest} onChange={(e) => setForm({ ...form, priest: e.target.value })} style={inputStyle}>
                 <option value="">— Select a priest —</option>
-                {priestOptions.map((p) => <option key={p.role} value={p.name}>{p.name} ({p.role})</option>)}
+                {priestOptions.map((p) => <option key={p.id} value={p.name}>{p.name} ({p.title})</option>)}
               </select>
             ) : (
               <input value={form.priest} disabled style={{ ...inputStyle, background: "#F4F1EA", color: "#8A8378" }} />

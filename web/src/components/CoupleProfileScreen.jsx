@@ -147,8 +147,10 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
           <div className="rounded-lg border p-5 grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
             <EditableField label="Groom" value={couple.groom} onSave={(v) => patch({ groom: v })} />
             <EditableField label="Bride" value={couple.bride} onSave={(v) => patch({ bride: v })} />
-            <EditableField label="Email" value={couple.email} icon={<Mail size={12} />} onSave={(v) => patch({ email: v })} />
-            <EditableField label="Phone" value={couple.phone} icon={<Phone size={12} />} onSave={(v) => patch({ phone: v })} />
+            <EditableField label="Groom's email" value={couple.groomEmail} icon={<Mail size={12} />} onSave={(v) => patch({ groomEmail: v })} />
+            <EditableField label="Bride's email" value={couple.brideEmail} icon={<Mail size={12} />} onSave={(v) => patch({ brideEmail: v })} />
+            <EditableField label="Groom's phone" value={couple.groomPhone} icon={<Phone size={12} />} onSave={(v) => patch({ groomPhone: v })} />
+            <EditableField label="Bride's phone" value={couple.bridePhone} icon={<Phone size={12} />} onSave={(v) => patch({ bridePhone: v })} />
             <EditableField label="Started prep" value={couple.prepStartDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ prepStartDate: v })} />
             <EditableField label="Wedding date" value={couple.weddingDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ weddingDate: v })} />
             <EditableField label="Last appointment" value={couple.lastAppointment} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ lastAppointment: v })} />
@@ -158,7 +160,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
                 <select value={couple.priest || ""} onChange={(e) => patch({ priest: e.target.value })} style={{ ...inputStyle, fontSize: "15px" }}>
                   <option value="">— Select a priest —</option>
                   {priests.filter((p) => p.name.trim()).map((p) => (
-                    <option key={p.role} value={p.name}>{p.name} ({p.role})</option>
+                    <option key={p.id} value={p.name}>{p.name} ({p.title})</option>
                   ))}
                 </select>
               </div>

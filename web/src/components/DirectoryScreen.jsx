@@ -52,7 +52,7 @@ export default function DirectoryScreen({ couples, templates, priests, profile, 
           </select>
           <div className="flex items-center gap-2 px-3.5 py-2 rounded-lg w-full sm:w-[260px]" style={{ background: "#FFFFFF", border: "1px solid #E4DDD0" }}>
             <Search size={15} color="#8A8378" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search couples" className="w-full bg-transparent outline-none text-[14px]" style={{ fontFamily: FONT_SANS, color: ink }} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search couples" className="w-full bg-transparent outline-none text-[14px]" style={{ fontFamily: FONT_SANS, color: ink }} />
           </div>
         </div>
       </div>

@@ -15,6 +15,7 @@ export default function CalendarModal({ couple, profileUrl, onClose, onCreated }
   const [error, setError] = useState(null);
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const guestEmails = [couple.groomEmail, couple.brideEmail].filter(Boolean);
 
   const handleCreate = async () => {
     if (!start) return;
@@ -50,7 +51,7 @@ export default function CalendarModal({ couple, profileUrl, onClose, onCreated }
           <div>
             <div className="flex items-center gap-2 mb-4 text-[14px]" style={{ color: sage, fontFamily: FONT_SANS }}>
               <Check size={16} />
-              Event created and invitation sent to {couple.email || "the couple"}.
+              Event created and invitation sent to {guestEmails.length > 0 ? guestEmails.join(" and ") : "the couple"}.
             </div>
             {result?.htmlLink && (
               <a href={result.htmlLink} target="_blank" rel="noopener" className="flex items-center gap-2 text-[13px] mb-6" style={{ color: bronze, fontFamily: FONT_SANS }}>
@@ -69,8 +70,8 @@ export default function CalendarModal({ couple, profileUrl, onClose, onCreated }
                 <div className="flex items-center gap-2 text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
                   <Mail size={12} /> Guests
                 </div>
-                <div className="text-[14px]" style={{ fontFamily: FONT_SANS, color: couple.email ? ink : brick }}>
-                  {couple.email || "No email on file — add one on the profile first"}
+                <div className="text-[14px]" style={{ fontFamily: FONT_SANS, color: guestEmails.length > 0 ? ink : brick }}>
+                  {guestEmails.length > 0 ? guestEmails.join(", ") : "No email on file for either the groom or bride — add one on the profile first"}
                 </div>
               </div>
               <div>

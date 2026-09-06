@@ -38,7 +38,7 @@ export default function ArchiveCoupleModal({ open, couple, onClose, onArchive })
         </div>
 
         <Field label={reasonPreset === "Other" ? "Note" : "Additional note (optional)"}>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} style={{ ...inputStyle, minHeight: "80px", resize: "vertical" }} placeholder="Any detail worth keeping on file…" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} style={{ ...inputStyle, minHeight: "80px", resize: "vertical" }} />
         </Field>
 
         <div className="flex justify-end gap-3 mt-6">

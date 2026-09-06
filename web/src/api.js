@@ -52,7 +52,9 @@ export const api = {
 
   priests: {
     list: () => apiFetch("/api/priests"),
-    update: (role, payload) => apiFetch(`/api/priests/${encodeURIComponent(role)}`, { method: "PUT", body: JSON.stringify(payload) }),
+    create: (payload) => apiFetch("/api/priests", { method: "POST", body: JSON.stringify(payload) }),
+    update: (id, payload) => apiFetch(`/api/priests/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+    remove: (id) => apiFetch(`/api/priests/${id}`, { method: "DELETE" }),
   },
 
   couples: {

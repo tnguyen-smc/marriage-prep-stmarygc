@@ -12,7 +12,8 @@ const router = Router();
 const TAB = "Couples";
 const TEMPLATES_TAB = "Templates";
 const HEADER = [
-  "id", "slug", "groom", "bride", "email", "phone", "weddingDate",
+  "id", "slug", "groom", "groomEmail", "groomPhone",
+  "bride", "brideEmail", "bridePhone", "weddingDate",
   "prepStartDate", "lastAppointment", "status", "drivePath",
   "templateIds", "templateData", "priest",
   "archived", "archivedReason", "archivedAt",
@@ -126,9 +127,11 @@ router.post("/", requireAuth, async (req, res) => {
       id: uuid(),
       slug,
       groom: b.groom || "",
+      groomEmail: b.groomEmail || "",
+      groomPhone: b.groomPhone || "",
       bride: b.bride || "",
-      email: b.email || "",
-      phone: b.phone || "",
+      brideEmail: b.brideEmail || "",
+      bridePhone: b.bridePhone || "",
       weddingDate: b.weddingDate || "",
       prepStartDate: b.prepStartDate || today,
       lastAppointment: today,
@@ -280,7 +283,7 @@ router.post("/:idOrSlug/events", requireAuth, async (req, res) => {
       start,
       end,
       timeZone: timeZone || "America/Chicago",
-      attendees: [match.email],
+      attendees: [match.groomEmail, match.brideEmail],
     });
 
     // Scheduling a session counts as contact — keep the card's date fresh.

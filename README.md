@@ -21,7 +21,7 @@ This copy is **pre-configured** for:
 | | |
 |---|---|
 | Frontend (GitHub Pages) | `https://tnguyen-smc.github.io/marriage-prep-stmarygc/` |
-| Backend (Render) | `https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com` |
+| Backend (Render) | `https://marriage-prep-st-mary-catholic-church.onrender.com` |
 
 Both URLs are already set in `web/vite.config.js`, `web/src/api.js`, and
 `render.yaml`, so you can drop these files into the repo as-is — no path
@@ -140,9 +140,10 @@ this is now two pieces:
   `id, title, driveFileId, createdAt`. The actual PDF bytes live in Drive;
   the Sheet just points to them.
 - **Couples** = one row per couple in the "Couples" sheet tab:
-  `id, slug, groom, bride, email, phone, weddingDate, prepStartDate,
-  lastAppointment, status, drivePath, templateIds, templateData, priest,
-  archived, archivedReason, archivedAt, templateCopies, documents`.
+  `id, slug, groom, groomEmail, groomPhone, bride, brideEmail, bridePhone,
+  weddingDate, prepStartDate, lastAppointment, status, drivePath,
+  templateIds, templateData, priest, archived, archivedReason,
+  archivedAt, templateCopies, documents`.
   - `slug` is the URL-safe id used in each couple's own address —
     `groomlastname-bridelastname` (e.g. `alvarez-nguyen`). It's generated
     from their names, de-duplicated with a `-2`, `-3` suffix if two
@@ -185,9 +186,10 @@ this is now two pieces:
    - User type: External (or Internal if you're on Google Workspace and
      only parish staff will use it).
    - Fill in app name, support email, developer email.
-   - Scopes: add `.../auth/drive.file`, `.../auth/spreadsheets`, and
-     `.../auth/calendar.events` (openid/email/profile are included by
-     default).
+   - Scopes: add `.../auth/drive` (full Drive access — see the note in
+     `server/src/googleClient.js` about why `drive.file` doesn't work
+     here), `.../auth/spreadsheets`, and `.../auth/calendar.events`
+     (openid/email/profile are included by default).
    - Add the priest's Google account(s) as test users if the app is in
      "Testing" publishing status (fine for a prototype).
 4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
@@ -210,21 +212,35 @@ this is now two pieces:
 
    **Couples** tab, row 1:
    ```
-   id | slug | groom | bride | email | phone | weddingDate | prepStartDate | lastAppointment | status | drivePath | templateIds | templateData | priest | archived | archivedReason | archivedAt | templateCopies | documents
+   id | slug | groom | groomEmail | groomPhone | bride | brideEmail | bridePhone | weddingDate | prepStartDate | lastAppointment | status | drivePath | templateIds | templateData | priest | archived | archivedReason | archivedAt | templateCopies | documents
    ```
 
    **Priests** tab, row 1:
    ```
-   role | name | email
+   id | title | name | email
    ```
-   Leave the rows under it empty for now — the admin fills in the Pastor
-   and Parochial Vicar's name/email from the app's Settings screen (see
-   section 6 below), and the app creates the two rows automatically.
+   Leave the rows under it empty — the admin adds each priest from the
+   app's Settings screen (see section 6 below), which creates rows here
+   automatically. `title` is free text (e.g. "Pastor", "Parochial Vicar",
+   or anything else) and can be renamed any time; you're not limited to
+   two priests.
 2. Copy the Sheet's ID out of its URL:
    `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit` → this is
    `GOOGLE_SHEET_ID`.
 3. Create a Google Drive folder for uploaded PDFs. Copy its ID out of the
    URL the same way → this is `GOOGLE_DRIVE_FOLDER_ID`.
+
+   > **If uploads fail with `500 {"error":"File not found: <some id>."}`**
+   > — this is almost always the scope, not the ID. Google's `drive.file`
+   > scope only lets an app see files/folders *it created itself*; it
+   > cannot see a folder you made by hand in Drive's own UI, even with the
+   > correct ID and full ownership. This app requests the broader `drive`
+   > scope specifically to avoid that trap (see `googleClient.js`) — if
+   > you're hitting this error, either the consent screen in Cloud
+   > Console is still only offering `drive.file`, or everyone signed in
+   > before the scope was widened and needs to **log out and back in** to
+   > pick up the new permission (Google never upgrades a stored token
+   > silently — same issue as adding the Calendar scope in section 8).
 4. Make sure the Google account you'll sign in with (the priest's account)
    has edit access to both the Sheet and the Drive folder — since the app
    acts as that signed-in user, not a separate service account. **This
@@ -242,16 +258,18 @@ this is now two pieces:
 ## 6. Roles, and who can see what
 
 - **Admin** (the one email in `ADMIN_EMAIL`): the only one who can reach
-  Settings — uploading/deleting PDF templates and setting the Pastor's and
-  Parochial Vicar's name + email. Can also reassign a couple's priest.
-- **Pastor / Parochial Vicar**: signs in with the email the admin set for
-  them in Settings. **Both priests see every couple** — the parish runs as
-  one office and they cover for each other, so "Priest in charge" records
-  who's responsible, not who's permitted to look. They don't get a
-  Settings button.
-- Anyone whose email isn't the admin's and isn't one of the two configured
-  priest emails is bounced back to the login screen after Google's consent
-  screen — nothing in Sheets or Drive is exposed to them.
+  Settings — uploading/deleting PDF templates, and adding, renaming, or
+  removing priests on the roster. Can also reassign a couple's priest.
+- **Priests**: the roster in Settings isn't limited to two — "Add another
+  priest" adds as many as the parish needs, each with their own editable
+  **title** (Pastor, Parochial Vicar, Associate Pastor, or your own
+  wording), name, and sign-in email. **Every priest on the roster sees
+  every couple** — the parish runs as one office and priests cover for
+  each other, so "Priest in charge" records who's responsible, not who's
+  permitted to look. Priests don't get a Settings button.
+- Anyone whose email isn't the admin's and isn't on the Priests roster is
+  bounced back to the login screen after Google's consent screen —
+  nothing in Sheets or Drive is exposed to them.
 - The "Priest in charge" field is a dropdown built from the Priests sheet
   tab, not free text, so it can't drift out of sync with who can log in.
 
@@ -272,9 +290,9 @@ rename them. "Copy link" on the profile page grabs the URL.
 
 Clicking a couple card opens their **profile card**, which holds:
 
-- **Details** — names, email, phone, date they started prep, wedding date,
-  last appointment. Every one of these is edit-in-place: tap the value,
-  type, and it saves to the Sheet on blur.
+- **Details** — names, each partner's own email and phone, date they
+  started prep, wedding date, last appointment. Every one of these is
+  edit-in-place: tap the value, type, and it saves to the Sheet on blur.
 - **Fillable forms** — the templates assigned to them. "Add form" picks
   from anything uploaded in Settings; "Fill out forms" opens the
   form-filling screen at `/couples/<slug>/forms`. Each row shows whether
@@ -305,7 +323,7 @@ couple an invitation.
 | Part of the event | What it's filled with |
 |---|---|
 | **Title** | `Marriage prep — <Groom> & <Bride>`, editable before you create it |
-| **Guests** | The couple's email address from their profile |
+| **Guests** | The groom's and bride's email addresses from their profile |
 | **Description** | The URL of the couple's profile card, e.g. `Couple profile: https://tnguyen-smc.github.io/marriage-prep-stmarygc/couples/alvarez-nguyen` |
 | **Start** | The date and time you pick |
 | **End** | Start + the duration you pick (30 / 45 / 60 / 90 minutes) |
@@ -343,9 +361,10 @@ remove it from `server/src/calendar.js`.
 
 ### Notes and limits
 
-- **A couple with no email on file** can't be invited. The modal shows the
-  guest line in red and the event is created without a guest; add their
-  email on the profile first.
+- **If neither partner has an email on file**, the event is created with
+  no guests and the modal shows the guest line in red; add at least one
+  email on the profile first. If only one has an email, only that person
+  is invited.
 - **The event lands on whichever priest is signed in**, not on the priest
   named in "Priest in charge". If Fr. A schedules on behalf of Fr. B, it
   appears on Fr. A's calendar with Fr. B nowhere on it.
@@ -510,7 +529,7 @@ a secret:
    sensitive, and you can see its value later), or **Secrets** tab → *New
    repository secret*
 3. Name: `VITE_API_URL`, value: your backend URL, e.g.
-   `https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com` (no trailing slash)
+   `https://marriage-prep-api.onrender.com` (no trailing slash)
 4. Re-run the deploy: **Actions** tab → latest run → *Re-run all jobs*.
    The value is read at build time, so changing it requires a rebuild —
    it will not take effect until the workflow runs again.
