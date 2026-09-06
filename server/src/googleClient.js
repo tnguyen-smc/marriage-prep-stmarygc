@@ -1,45 +1,74 @@
-import "dotenv/config";
 import { google } from "googleapis";
+import { Readable } from "stream";
 
-// Scopes we ask the priest to grant on first login:
-// - identify who they are (email/profile)
-// - drive: full Drive access for THIS account. We need this, not the
-//   narrower drive.file, because GOOGLE_DRIVE_FOLDER_ID points at a
-//   folder the admin created by hand in Drive's own UI before the app
-//   ever touched it. drive.file only grants visibility into files/folders
-//   the app itself created or that were opened through Google's file
-//   picker — it CANNOT see a pre-existing folder just because you know
-//   its ID. Using drive.file here fails every upload with a misleading
-//   "File not found: <folder id>" error, even when the id is correct.
-// - spreadsheets: read/write the one Sheet we use as the database
-export const SCOPES = [
-  "openid",
-  "email",
-  "profile",
-  "https://www.googleapis.com/auth/drive",
-  "https://www.googleapis.com/auth/spreadsheets",
-  "https://www.googleapis.com/auth/calendar.events",
-];
+const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-export function newOAuth2Client() {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
+function driveClient(auth) {
+  return google.drive({ version: "v3", auth });
 }
 
-/**
- * Builds an OAuth2 client pre-loaded with this session's tokens, and
- * keeps the session updated if Google silently refreshes the access
- * token during the request (this is why we don't just store one
- * static client per user).
- */
-export function clientFromSession(session) {
-  const client = newOAuth2Client();
-  if (session.tokens) client.setCredentials(session.tokens);
-  client.on("tokens", (tokens) => {
-    session.tokens = { ...session.tokens, ...tokens };
+// IMPORTANT: `supportsAllDrives: true` is required on every Drive API
+// call below because GOOGLE_DRIVE_FOLDER_ID points into a Shared Drive
+// (a "Team Drive"), not a personal My Drive folder. Without this flag,
+// the Drive API pretends Shared Drive items don't exist at all —
+// "File not found" — no matter how broad the OAuth scope is. This is a
+// completely separate requirement from the OAuth scope itself; both
+// have to be satisfied for Shared Drive files to work.
+const SHARED_DRIVE_SUPPORT = { supportsAllDrives: true };
+
+export async function uploadPdf(auth, filename, buffer) {
+  return uploadFile(auth, filename, "application/pdf", buffer);
+}
+
+/** Uploads any file type (baptism certificates, scans, photos, etc.). */
+export async function uploadFile(auth, filename, mimeType, buffer) {
+  const drive = driveClient(auth);
+  const res = await drive.files.create({
+    requestBody: { name: filename, parents: FOLDER_ID ? [FOLDER_ID] : undefined },
+    media: { mimeType, body: Readable.from(buffer) },
+    fields: "id, webViewLink",
+    ...SHARED_DRIVE_SUPPORT,
   });
-  return client;
+  return { id: res.data.id, webViewLink: res.data.webViewLink };
+}
+
+/** Streams a Drive file's bytes straight into an Express response. */
+export async function downloadFileStream(auth, fileId, res) {
+  const drive = driveClient(auth);
+  const driveRes = await drive.files.get(
+    { fileId, alt: "media", ...SHARED_DRIVE_SUPPORT },
+    { responseType: "stream" }
+  );
+  res.setHeader("Content-Type", "application/pdf");
+  driveRes.data.pipe(res);
+}
+
+export async function deleteFile(auth, fileId) {
+  const drive = driveClient(auth);
+  await drive.files.delete({ fileId, ...SHARED_DRIVE_SUPPORT });
+}
+
+/** Makes a brand-new Drive file that's a copy of `fileId`, so filling it
+ *  in never touches the original. Returns the new file's id. */
+export async function copyFile(auth, fileId, name) {
+  const drive = driveClient(auth);
+  const res = await drive.files.copy({
+    fileId,
+    requestBody: { name, parents: FOLDER_ID ? [FOLDER_ID] : undefined },
+    fields: "id",
+    ...SHARED_DRIVE_SUPPORT,
+  });
+  return res.data.id;
+}
+
+/** Overwrites a Drive file's bytes in place (used to save a couple's
+ *  filled-in copy after they answer more fields — never called on a
+ *  template's master file id). */
+export async function updateFileBytes(auth, fileId, buffer) {
+  const drive = driveClient(auth);
+  await drive.files.update({
+    fileId,
+    media: { mimeType: "application/pdf", body: Readable.from(buffer) },
+    ...SHARED_DRIVE_SUPPORT,
+  });
 }
