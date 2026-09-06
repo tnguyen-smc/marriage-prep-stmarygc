@@ -36,6 +36,7 @@ jobs:
       - name: Build project
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
         run: |
           cd docs
           npm run build
