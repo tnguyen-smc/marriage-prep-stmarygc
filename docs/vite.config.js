@@ -8,7 +8,7 @@ import react from "@vitejs/plugin-react";
 // embedded/linked from Gantry rather than a custom domain, so this
 // defaults to USE_CUSTOM_DOMAIN = false. Set REPO_NAME to your actual
 // GitHub repo name below.
-const REPO_NAME = "marriage-prep"; // <-- change to your actual repo name
+const REPO_NAME = "marriage-prep-stmarygc"; // <-- change to your actual repo name
 const USE_CUSTOM_DOMAIN = false;
 
 export default defineConfig({
