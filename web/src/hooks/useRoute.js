@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // The app has three routes, so a ~40-line router beats pulling in
-// react-router. BASE_URL is Vite's build-time base ("/" locally,
+// react-router. BASE_URL is Vite's build-time base. ("/" locally,
 // "/<repo-name>/" on GitHub Pages) — we strip it so route matching is
 // the same in both places.
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
