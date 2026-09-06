@@ -9,7 +9,7 @@
 // For local development against a local server, create web/.env.local
 // containing: VITE_API_URL=http://localhost:4000
 export const API_URL =
-  import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church.onrender.com";
+  import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com";
 
 /** Pulls the real `{ "error": "..." }` message out of a failed response
  *  instead of just reporting a bare status code, so specific, actionable
