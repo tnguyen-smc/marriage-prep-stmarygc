@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { ChevronLeft, Upload, FileText, Trash2, Save, Plus } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { ChevronLeft, Upload, FileText, Trash2, Save, Plus, FolderOpen } from "lucide-react";
 import { ink, bronze, sage, brick, FONT_SERIF, FONT_SANS, inputStyle } from "../theme.js";
 import { api } from "../api.js";
 
@@ -8,6 +8,18 @@ function PriestRow({ priest, onSaved, onRemoved }) {
   const [name, setName] = useState(priest.name);
   const [email, setEmail] = useState(priest.email);
   const [saving, setSaving] = useState(false);
+
+  // `useState(priest.title)` only seeds the field once, at mount. Since
+  // this row keeps the same React key (priest.id) across re-renders,
+  // React reuses this same component instance when the list refreshes
+  // after a save — so without this effect, the input can silently drift
+  // out of sync with what's actually saved (the write always succeeds;
+  // this was purely the displayed value going stale).
+  useEffect(() => {
+    setTitle(priest.title);
+    setName(priest.name);
+    setEmail(priest.email);
+  }, [priest.id, priest.title, priest.name, priest.email]);
 
   const dirty = title !== priest.title || name !== priest.name || email !== priest.email;
 
@@ -66,6 +78,66 @@ function PriestRow({ priest, onSaved, onRemoved }) {
   );
 }
 
+function DriveFolderSetting() {
+  const [value, setValue] = useState("");
+  const [saved, setSaved] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.settings.get()
+      .then((s) => { setValue(s.driveFolderId); setSaved(s.driveFolderId); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const dirty = value !== saved;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const s = await api.settings.update({ driveFolderId: value });
+      setValue(s.driveFolderId);
+      setSaved(s.driveFolderId);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border p-5 mb-8" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+      <h2 className="text-[16px] mb-1" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Drive folder</h2>
+      <p className="text-[13px] mb-4" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
+        Where uploaded templates and couples' documents are stored. Paste the folder's full Drive URL or just its id — either works, including a folder inside a Shared Drive. Changing this takes effect immediately, no redeploy needed.
+      </p>
+      {loading ? (
+        <div className="text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Loading…</div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 mb-3">
+            <FolderOpen size={16} color={bronze} className="flex-shrink-0" />
+            <input value={value} onChange={(e) => setValue(e.target.value)} style={inputStyle} />
+          </div>
+          {error && <div className="text-[13px] mb-3" style={{ color: brick, fontFamily: FONT_SANS }}>{error}</div>}
+          <button
+            onClick={handleSave}
+            disabled={!dirty || saving}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] text-white"
+            style={{ background: dirty ? sage : "#B7AF9F", fontFamily: FONT_SANS, cursor: dirty ? "pointer" : "not-allowed" }}
+          >
+            <Save size={14} />
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsScreen({ templates, priests, onBack, onTemplatesChanged, onPriestsChanged }) {
   const [title, setTitle] = useState("");
   const [file, setFile] = useState(null);
@@ -115,6 +187,8 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
       </div>
 
       <div className="max-w-2xl mx-auto px-5 sm:px-8 py-8">
+        <DriveFolderSetting />
+
         <div className="mb-8">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-[16px]" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Priests</h2>

@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/requireAuth.js";
 import { readRows, appendRow, updateRow } from "../sheets.js";
 import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile } from "../drive.js";
 import { createEvent } from "../calendar.js";
+import { getConfigValue } from "../config.js";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 const router = Router();
@@ -80,10 +81,12 @@ async function ensureCoupleCopy(auth, coupleRow, templateId) {
   const template = templateRows.find((t) => t.id === templateId);
   if (!template) throw Object.assign(new Error("Template not found"), { status: 404 });
 
+  const folderId = await getConfigValue(auth, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
   const newFileId = await copyFile(
     auth,
     template.driveFileId,
-    `${template.title} — ${coupleRow.groom}_${coupleRow.bride}.pdf`
+    `${template.title} — ${coupleRow.groom}_${coupleRow.bride}.pdf`,
+    folderId
   );
 
   copies[templateId] = newFileId;
@@ -222,11 +225,13 @@ router.post("/:idOrSlug/documents", requireAuth, upload.single("file"), async (r
     const match = await findCouple(req.oauth2Client, req.params.idOrSlug);
     if (!match) return res.status(404).json({ error: "Couple not found" });
 
+    const folderId = await getConfigValue(req.oauth2Client, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
     const { id: driveFileId, webViewLink } = await uploadFile(
       req.oauth2Client,
       `${req.body.name || req.file.originalname} — ${match.groom}_${match.bride}`,
       req.file.mimetype,
-      req.file.buffer
+      req.file.buffer,
+      folderId
     );
 
     const documents = match.documents ? JSON.parse(match.documents) : [];

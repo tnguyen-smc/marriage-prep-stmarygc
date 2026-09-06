@@ -6,6 +6,7 @@ import authRoutes from "./routes/auth.js";
 import templateRoutes from "./routes/templates.js";
 import coupleRoutes from "./routes/couples.js";
 import priestRoutes from "./routes/priests.js";
+import settingsRoutes from "./routes/settings.js";
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/templates", templateRoutes);
 app.use("/api/couples", coupleRoutes);
 app.use("/api/priests", priestRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.get("/", (_req, res) => res.send("Marriage Prep API is running."));
 
