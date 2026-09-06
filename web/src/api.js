@@ -9,7 +9,7 @@
 // For local development against a local server, create web/.env.local
 // containing: VITE_API_URL=http://localhost:4000
 export const API_URL =
-  import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church.onrender.com";
+  import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com";
 
 async function apiFetch(path, opts = {}) {
   const isFormData = opts.body instanceof FormData;

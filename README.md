@@ -21,7 +21,7 @@ This copy is **pre-configured** for:
 | | |
 |---|---|
 | Frontend (GitHub Pages) | `https://tnguyen-smc.github.io/marriage-prep-stmarygc/` |
-| Backend (Render) | `https://marriage-prep-st-mary-catholic-church.onrender.com` |
+| Backend (Render) | `https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com` |
 
 Both URLs are already set in `web/vite.config.js`, `web/src/api.js`, and
 `render.yaml`, so you can drop these files into the repo as-is — no path
@@ -510,7 +510,7 @@ a secret:
    sensitive, and you can see its value later), or **Secrets** tab → *New
    repository secret*
 3. Name: `VITE_API_URL`, value: your backend URL, e.g.
-   `https://marriage-prep-api.onrender.com` (no trailing slash)
+   `https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com` (no trailing slash)
 4. Re-run the deploy: **Actions** tab → latest run → *Re-run all jobs*.
    The value is read at build time, so changing it requires a rebuild —
    it will not take effect until the workflow runs again.
