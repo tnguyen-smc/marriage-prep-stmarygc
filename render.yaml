@@ -20,7 +20,7 @@ services:
 
       # Must match an Authorized redirect URI on the OAuth client exactly.
       - key: GOOGLE_REDIRECT_URI
-        value: https://marriage-prep-st-mary-catholic-church.onrender.com/api/auth/google/callback
+        value: https://marriage-prep-st-mary-catholic-church-d3d8.onrender.com/api/auth/google/callback
 
       # Frontend (github.io) and backend (onrender.com) are different
       # sites, so the session cookie has to be cross-site. Both required.
