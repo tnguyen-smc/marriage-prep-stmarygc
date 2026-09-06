@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Calendar, ChevronLeft, Check, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { Calendar, ChevronLeft, Check, ChevronRight as ChevronRightIcon, Printer } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import { AnnotationLayer } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -47,10 +47,9 @@ function PdfPage({ pdfDoc, pageNumber, containerWidth }) {
       // the selector ".pdfViewer .page" — outside its full reference
       // viewer, nothing sets those, so every calc()/round() expression
       // that depends on them (which is most of the annotation layer's
-      // sizing and positioning) resolves to nothing, collapsing the
-      // whole form layer down to a sliver. Matching that exact class
-      // structure and setting --scale-factor ourselves is what makes
-      // the real fix, not a workaround.
+      // sizing and positioning) resolves to nothing. Matching that exact
+      // class structure and setting --scale-factor ourselves is what
+      // makes the annotation layer position correctly at all.
       pageDiv.style.setProperty("--scale-factor", String(scale));
 
       canvas.width = viewport.width;
@@ -59,7 +58,20 @@ function PdfPage({ pdfDoc, pageNumber, containerWidth }) {
       canvas.style.height = `${viewport.height}px`;
 
       if (renderTaskRef.current) renderTaskRef.current.cancel();
-      const renderTask = page.render({ canvasContext: canvas.getContext("2d"), viewport });
+      const renderTask = page.render({
+        canvasContext: canvas.getContext("2d"),
+        viewport,
+        // Without this, page.render() defaults to AnnotationMode.ENABLE,
+        // which bakes every filled field's appearance directly into the
+        // canvas. Since we ALSO draw a live interactive AnnotationLayer
+        // on top for those same fields, re-opening an already-filled PDF
+        // showed the same typed text twice, slightly offset — the
+        // "ghosting" artifact. ENABLE_FORMS is what PDF.js's own
+        // reference viewer uses specifically when an interactive
+        // AnnotationLayer is also present: it renders everything else
+        // normally but leaves form widgets to the interactive layer.
+        annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
+      });
       renderTaskRef.current = renderTask;
       try {
         await renderTask.promise;
@@ -99,6 +111,21 @@ function PdfPage({ pdfDoc, pageNumber, containerWidth }) {
   );
 }
 
+function PageNav({ pageNumber, numPages, onPrev, onNext }) {
+  if (numPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-center gap-3 py-2">
+      <button onClick={onPrev} disabled={pageNumber <= 1} className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30">
+        <ChevronLeft size={16} color={ink} />
+      </button>
+      <span className="text-[13px] whitespace-nowrap" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Page {pageNumber} of {numPages}</span>
+      <button onClick={onNext} disabled={pageNumber >= numPages} className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30">
+        <ChevronRightIcon size={16} color={ink} />
+      </button>
+    </div>
+  );
+}
+
 export default function FormFillingScreen({ couple, templates, onBack }) {
   const assignedTemplates = templates.filter((t) => couple.templateIds.includes(t.id));
   const [activeTemplateId, setActiveTemplateId] = useState(assignedTemplates[0]?.id || null);
@@ -106,11 +133,17 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [loadStatus, setLoadStatus] = useState("idle"); // idle | loading | ready | error
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved | error
+  const [printStatus, setPrintStatus] = useState("idle"); // idle | preparing | error
   const [errorMessage, setErrorMessage] = useState(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const containerRef = useRef(null);
+  // Caches the loaded PDFDocumentProxy per (coupleId, templateId) for this
+  // screen's lifetime, so switching between assigned forms and back
+  // doesn't re-download and re-parse a file we already have.
+  const docCacheRef = useRef(new Map());
 
   const activeTemplate = assignedTemplates.find((t) => t.id === activeTemplateId);
+  const cacheKey = `${couple.id}:${activeTemplateId}`;
 
   useEffect(() => {
     if (activeTemplateId && !assignedTemplates.some((t) => t.id === activeTemplateId)) {
@@ -133,15 +166,24 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   }, []);
 
   useEffect(() => {
-    setPdfDoc(null);
     setPageNumber(1);
     setSaveStatus("idle");
     setErrorMessage(null);
     if (!activeTemplateId) {
+      setPdfDoc(null);
       setLoadStatus("idle");
       return;
     }
+
+    const cached = docCacheRef.current.get(cacheKey);
+    if (cached) {
+      setPdfDoc(cached);
+      setLoadStatus("ready");
+      return;
+    }
+
     let cancelled = false;
+    setPdfDoc(null);
     setLoadStatus("loading");
     (async () => {
       try {
@@ -151,6 +193,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
         if (cancelled) return;
         const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
         if (cancelled) return;
+        docCacheRef.current.set(cacheKey, doc);
         setPdfDoc(doc);
         setLoadStatus("ready");
       } catch (e) {
@@ -163,6 +206,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [couple.id, activeTemplateId]);
 
   const handleSave = useCallback(async () => {
@@ -179,7 +223,47 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     }
   }, [pdfDoc, couple.id, activeTemplateId]);
 
+  // Prints exactly what's saved in Drive right now — not whatever's
+  // sitting unsaved in the in-page editor — by fetching the couple's
+  // copy fresh and handing it to the browser's own native PDF viewer
+  // (via a hidden iframe), which has real print support built in. This
+  // deliberately bypasses our own canvas+AnnotationLayer renderer, so
+  // there's no risk of the same ghosting/overlap issue showing up on a
+  // printed page.
+  const handlePrint = useCallback(async () => {
+    if (!activeTemplateId) return;
+    setPrintStatus("preparing");
+    setErrorMessage(null);
+    try {
+      const buf = await api.couples.templateFile.fetchBytes(couple.id, activeTemplateId);
+      const blobUrl = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "0";
+      iframe.src = blobUrl;
+      iframe.onload = () => {
+        setPrintStatus("idle");
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+          URL.revokeObjectURL(blobUrl);
+        }, 60000);
+      };
+      document.body.appendChild(iframe);
+    } catch (e) {
+      setErrorMessage(e.message);
+      setPrintStatus("error");
+    }
+  }, [couple.id, activeTemplateId]);
+
   const numPages = pdfDoc?.numPages || 0;
+  const goPrev = () => setPageNumber((p) => Math.max(1, p - 1));
+  const goNext = () => setPageNumber((p) => Math.min(numPages, p + 1));
 
   return (
     <div className="h-screen flex flex-col" style={{ background: "#FAF7F0" }}>
@@ -193,25 +277,6 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
         </div>
         {loadStatus === "ready" && (
           <div className="flex items-center gap-3 flex-shrink-0">
-            {numPages > 1 && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-                  disabled={pageNumber <= 1}
-                  className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30"
-                >
-                  <ChevronLeft size={16} color={ink} />
-                </button>
-                <span className="text-[13px] whitespace-nowrap" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Page {pageNumber} of {numPages}</span>
-                <button
-                  onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
-                  disabled={pageNumber >= numPages}
-                  className="p-2 rounded-lg hover:bg-black/5 disabled:opacity-30"
-                >
-                  <ChevronRightIcon size={16} color={ink} />
-                </button>
-              </div>
-            )}
             {saveStatus === "saved" && (
               <span className="hidden sm:flex items-center gap-1.5 text-[13px]" style={{ color: sage, fontFamily: FONT_SANS }}>
                 <Check size={14} /> Saved to Drive
@@ -220,6 +285,15 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
             {saveStatus === "error" && (
               <span className="hidden sm:inline text-[13px]" style={{ color: brick, fontFamily: FONT_SANS }}>{errorMessage}</span>
             )}
+            <button
+              onClick={handlePrint}
+              disabled={printStatus === "preparing"}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[14px] flex-shrink-0"
+              style={{ border: "1px solid #E4DDD0", color: ink, fontFamily: FONT_SANS }}
+            >
+              <Printer size={15} />
+              {printStatus === "preparing" ? "Preparing…" : "Print"}
+            </button>
             <button
               onClick={handleSave}
               disabled={saveStatus === "saving"}
@@ -254,15 +328,16 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
 
         <div ref={containerRef} className="flex-1 flex flex-col min-h-0 overflow-y-auto">
           {activeTemplate && (
-            <div className="px-5 sm:px-8 pt-6 pb-3 flex-shrink-0">
+            <div className="px-5 sm:px-8 pt-6 pb-1 flex-shrink-0">
               <h2 className="text-[22px]" style={{ fontFamily: FONT_SERIF, color: ink }}>{activeTemplate.title}</h2>
               <p className="text-[13px] mt-1.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
                 Tap into any field below to fill it out, then hit Save to Drive when done — no download needed.
               </p>
+              <PageNav pageNumber={pageNumber} numPages={numPages} onPrev={goPrev} onNext={goNext} />
             </div>
           )}
 
-          <div className="flex-1 px-4 sm:px-8 pb-8">
+          <div className="flex-1 px-4 sm:px-8 pb-4">
             {loadStatus === "loading" && (
               <div className="text-[14px] py-6" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Loading this couple's copy…</div>
             )}
@@ -276,6 +351,12 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
               <PdfPage pdfDoc={pdfDoc} pageNumber={pageNumber} containerWidth={containerWidth} />
             )}
           </div>
+
+          {loadStatus === "ready" && (
+            <div className="flex-shrink-0 pb-6">
+              <PageNav pageNumber={pageNumber} numPages={numPages} onPrev={goPrev} onNext={goNext} />
+            </div>
+          )}
         </div>
       </div>
     </div>
