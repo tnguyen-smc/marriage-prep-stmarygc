@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Calendar, Cloud, RefreshCw, ChevronLeft, Eye } from "lucide-react";
 import { ink, sage, bronze, FONT_SERIF, FONT_SANS } from "../theme.js";
 import { formatDate } from "../data/helpers.js";
 import { useTemplatePdf } from "../hooks/useTemplatePdf.js";
 import DynamicFieldForm from "./DynamicFieldForm.jsx";
 import PdfPreviewModal from "./PdfPreviewModal.jsx";
+import { groupFields, getSections } from "../lib/groupFields.js";
 import { api } from "../api.js";
 
 const EMPTY_VALUES = {};
@@ -12,6 +13,7 @@ const EMPTY_VALUES = {};
 export default function FormFillingScreen({ couple, templates, onBack, onCoupleUpdated }) {
   const assignedTemplates = templates.filter((t) => couple.templateIds.includes(t.id));
   const [activeTemplateId, setActiveTemplateId] = useState(assignedTemplates[0]?.id || null);
+  const [activeSection, setActiveSection] = useState("all");
 
   useEffect(() => {
     if (activeTemplateId && !assignedTemplates.some((t) => t.id === activeTemplateId)) {
@@ -27,6 +29,12 @@ export default function FormFillingScreen({ couple, templates, onBack, onCoupleU
   const activeValues = templateData[activeTemplateId] || EMPTY_VALUES;
   const { fields, previewUrl, status: pdfStatus, errorMessage: pdfErrorMessage, saveStatus: driveSaveStatus } = useTemplatePdf(couple.id, activeTemplateId, activeValues);
   const activeTemplate = assignedTemplates.find((t) => t.id === activeTemplateId);
+  const sections = useMemo(() => (pdfStatus === "ready" ? getSections(groupFields(fields)) : []), [fields, pdfStatus]);
+
+  const selectTemplate = (id) => {
+    setActiveTemplateId(id);
+    setActiveSection("all");
+  };
   const combinedStatus =
     syncStatus === "error" || driveSaveStatus === "error" ? "error" :
     syncStatus === "syncing" || driveSaveStatus === "saving" ? "syncing" :
@@ -96,25 +104,54 @@ export default function FormFillingScreen({ couple, templates, onBack, onCoupleU
             <div className="px-5 py-4 text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>No forms assigned yet. Edit this couple's intake to add one.</div>
           )}
           {assignedTemplates.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTemplateId(t.id)}
-              className="w-full text-left px-5 py-3.5 border-l-2 flex-shrink-0"
-              style={{ borderColor: activeTemplateId === t.id ? bronze : "transparent", background: activeTemplateId === t.id ? "#FFFFFF" : "transparent" }}
-            >
-              <span className="text-[14.5px]" style={{ fontFamily: FONT_SANS, color: activeTemplateId === t.id ? ink : "#6E675C" }}>{t.title}</span>
-            </button>
+            <div key={t.id} className="flex-shrink-0">
+              <button
+                onClick={() => selectTemplate(t.id)}
+                className="w-full text-left px-5 py-3.5 border-l-2"
+                style={{ borderColor: activeTemplateId === t.id ? bronze : "transparent", background: activeTemplateId === t.id ? "#FFFFFF" : "transparent" }}
+              >
+                <span className="text-[14.5px]" style={{ fontFamily: FONT_SANS, color: activeTemplateId === t.id ? ink : "#6E675C" }}>{t.title}</span>
+              </button>
+              {activeTemplateId === t.id && sections.length > 1 && (
+                <div className="pb-2" style={{ background: "#FFFFFF" }}>
+                  <button
+                    onClick={() => setActiveSection("all")}
+                    className="w-full text-left pl-9 pr-5 py-2 text-[13px]"
+                    style={{ fontFamily: FONT_SANS, color: activeSection === "all" ? bronze : "#8A8378", fontWeight: activeSection === "all" ? 600 : 400 }}
+                  >
+                    All sections
+                  </button>
+                  {sections.map((s) => (
+                    <button
+                      key={s.key}
+                      onClick={() => setActiveSection(s.key)}
+                      className="w-full text-left pl-9 pr-5 py-2 text-[13px]"
+                      style={{ fontFamily: FONT_SANS, color: activeSection === s.key ? bronze : "#8A8378", fontWeight: activeSection === s.key ? 600 : 400 }}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </div>
 
         <div className="flex-1 overflow-y-auto min-w-0">
           <div className="max-w-3xl mx-auto px-5 sm:px-10 py-8">
-            {activeTemplate && <h2 className="text-[24px] mb-6" style={{ fontFamily: FONT_SERIF, color: ink }}>{activeTemplate.title}</h2>}
+            {activeTemplate && (
+              <h2 className="text-[24px] mb-6" style={{ fontFamily: FONT_SERIF, color: ink }}>
+                {activeTemplate.title}
+                {activeSection !== "all" && sections.find((s) => s.key === activeSection) && (
+                  <span style={{ color: "#B7AF9F" }}> — {sections.find((s) => s.key === activeSection).label}</span>
+                )}
+              </h2>
+            )}
             {pdfStatus === "loading" && <div className="text-[14px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Reading this PDF's fields…</div>}
             {pdfStatus === "error" && <div className="text-[14px]" style={{ color: "#8B3A3A", fontFamily: FONT_SANS }}>{pdfErrorMessage || "Couldn't load this template's PDF."}</div>}
             {pdfStatus === "ready" && (
               <div className="pb-16">
-                <DynamicFieldForm fields={fields} values={activeValues} onChange={updateField} />
+                <DynamicFieldForm fields={fields} values={activeValues} onChange={updateField} activeSection={activeSection} />
               </div>
             )}
           </div>

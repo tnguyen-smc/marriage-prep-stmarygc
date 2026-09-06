@@ -1,78 +1,7 @@
 import React, { useMemo } from "react";
 import { ink, bronze, FONT_SANS, inputStyle } from "../theme.js";
 import { ToggleSwitch } from "./Shared.jsx";
-
-/** Turns a raw PDF field name/label fragment into a readable label.
- *  Handles "Groom Present Address Line 1" style names (already readable)
- *  as well as machine-y ones like "how_long_have_you_known_each_other"
- *  or "PriorMarriage" (camelCase from a Q-prefixed checkbox group). */
-function humanize(name) {
-  return name
-    .replace(/_/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^./, (c) => c.toUpperCase());
-}
-
-const SIDE_PREFIX_RE = /^(Groom|Bride)\s+(.*)$/;
-const YES_NO_NA_RE = /^(.*?)\s*-\s*(Groom|Bride)\s+(Yes|No|N\/?A)$/i;
-
-/**
- * Groups a flat field list into something efficient to fill during a
- * live session, based on naming conventions (not hardcoded to any one
- * diocese's form):
- *   "Groom X" / "Bride X"                    -> paired side-by-side row
- *   "<Question> - Groom/Bride Yes/No/N/A"    -> reconstructed Yes/No/N-A
- *                                                question row, both sides
- *   everything else                          -> General Information,
- *                                                one field per row
- * This turns a 160-field flat list into ~60 rows a priest can move down
- * once, answering both partners' equivalent question together, instead
- * of hunting through everything twice.
- */
-function groupFields(fields) {
-  const paired = new Map(); // suffix -> { groom?, bride? }
-  const pairedOrder = [];
-  const testimony = new Map(); // question -> { groomYes, groomNo, groomNA, brideYes, brideNo, brideNA }
-  const testimonyOrder = [];
-  const general = [];
-
-  for (const f of fields) {
-    if (f.kind === "checkbox") {
-      const m = f.name.match(YES_NO_NA_RE);
-      if (m) {
-        const [, question, side, answer] = m;
-        if (!testimony.has(question)) {
-          testimony.set(question, {});
-          testimonyOrder.push(question);
-        }
-        const entry = testimony.get(question);
-        const sideKey = side.toLowerCase();
-        const answerKey = /^yes$/i.test(answer) ? "yes" : /^no$/i.test(answer) ? "no" : "na"; // else matches "N/A" or "NA"
-        entry[`${sideKey}${answerKey.charAt(0).toUpperCase()}${answerKey.slice(1)}`] = f.name;
-        continue;
-      }
-      general.push(f);
-      continue;
-    }
-
-    const m = f.name.match(SIDE_PREFIX_RE);
-    if (m && (f.kind === "text" || f.kind === "dropdown" || f.kind === "radio")) {
-      const [, side, suffix] = m;
-      if (!paired.has(suffix)) {
-        paired.set(suffix, {});
-        pairedOrder.push(suffix);
-      }
-      paired.get(suffix)[side.toLowerCase()] = f;
-      continue;
-    }
-
-    general.push(f);
-  }
-
-  return { paired, pairedOrder, testimony, testimonyOrder, general };
-}
+import { groupFields, humanize } from "../lib/groupFields.js";
 
 function SingleControl({ field, value, onChange }) {
   if (!field) return <div className="text-[13px] italic" style={{ color: "#B7AF9F", fontFamily: FONT_SANS }}>—</div>;
@@ -172,7 +101,11 @@ function GeneralRow({ field, values, onChange }) {
   );
 }
 
-export default function DynamicFieldForm({ fields, values, onChange }) {
+/** `activeSection`: "groomBride" | "testimony" | "general" | null/"all".
+ *  When set to one of the three keys, only that section renders — this
+ *  is what lets the sidebar's per-template sub-navigation jump straight
+ *  to a section instead of showing (and scrolling through) everything. */
+export default function DynamicFieldForm({ fields, values, onChange, activeSection }) {
   const grouped = useMemo(() => groupFields(fields), [fields]);
 
   if (fields.length === 0) {
@@ -184,10 +117,11 @@ export default function DynamicFieldForm({ fields, values, onChange }) {
   }
 
   const { paired, pairedOrder, testimony, testimonyOrder, general } = grouped;
+  const showAll = !activeSection || activeSection === "all";
 
   return (
     <div className="space-y-10">
-      {pairedOrder.length > 0 && (
+      {(showAll || activeSection === "groomBride") && pairedOrder.length > 0 && (
         <section>
           <h3 className="text-[13px] mb-4 tracking-wide uppercase" style={{ color: "#B7AF9F", fontFamily: FONT_SANS }}>Groom &amp; Bride</h3>
           <div className="space-y-5">
@@ -198,7 +132,7 @@ export default function DynamicFieldForm({ fields, values, onChange }) {
         </section>
       )}
 
-      {testimonyOrder.length > 0 && (
+      {(showAll || activeSection === "testimony") && testimonyOrder.length > 0 && (
         <section>
           <h3 className="text-[13px] mb-4 tracking-wide uppercase" style={{ color: "#B7AF9F", fontFamily: FONT_SANS }}>Prenuptial Testimony</h3>
           <div className="space-y-5">
@@ -209,7 +143,7 @@ export default function DynamicFieldForm({ fields, values, onChange }) {
         </section>
       )}
 
-      {general.length > 0 && (
+      {(showAll || activeSection === "general") && general.length > 0 && (
         <section>
           <h3 className="text-[13px] mb-4 tracking-wide uppercase" style={{ color: "#B7AF9F", fontFamily: FONT_SANS }}>General Information</h3>
           <div className="space-y-5">
