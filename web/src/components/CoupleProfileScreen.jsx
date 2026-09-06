@@ -120,8 +120,56 @@ function MeetingRow({ item, value, onSave }) {
   );
 }
 
+/** One row for a couple-specific custom form (imported directly from
+ *  their existing Drive folder, not tied to any shared template). The
+ *  title is always editable in place — the whole point of these is that
+ *  old files are often labeled inconsistently and need renaming. */
+function CustomFormRow({ form, coupleId, onRename, onRemove }) {
+  const [title, setTitle] = useState(form.title);
+
+  const commit = () => {
+    if (title.trim() && title !== form.title) onRename(form.id, title.trim());
+  };
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3.5">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <FileText size={16} color={sage} className="flex-shrink-0" />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          className="text-[14px] bg-transparent outline-none rounded px-1 -mx-1 focus:bg-black/[0.03] w-full"
+          style={{ fontFamily: FONT_SANS, color: ink }}
+        />
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <a
+          href={`${API_URL}/api/couples/${coupleId}/customForms/${form.id}/file`}
+          target="_blank"
+          rel="noopener"
+          className="flex items-center gap-1.5 text-[12px]"
+          style={{ color: "#6E675C", fontFamily: FONT_SANS }}
+        >
+          <ExternalLink size={13} />
+          Preview PDF
+        </a>
+        <button
+          onClick={() => onRemove(form.id)}
+          className="p-1.5 rounded-lg opacity-40 hover:opacity-100 hover:bg-black/5"
+          title={`Remove "${form.title}" from this couple (rare — the file itself stays in Drive, just no longer tracked here)`}
+        >
+          <Trash2 size={12} color={brick} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function CoupleProfileScreen({ couple, templates, priests, isAdmin, onBack, onOpenForms, onCoupleUpdated, onCoupleDeleted }) {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [checklistExpanded, setChecklistExpanded] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [addFormOpen, setAddFormOpen] = useState(false);
@@ -176,6 +224,16 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
     const template = templates.find((t) => t.id === templateId);
     if (!confirm(`Remove "${template?.title || "this form"}" from this couple? Their filled copy stays in Drive — adding it back later picks up right where they left off.`)) return;
     await patch({ templateIds: couple.templateIds.filter((id) => id !== templateId) });
+  };
+
+  const renameCustomForm = (formId, title) => {
+    patch({ customForms: couple.customForms.map((f) => (f.id === formId ? { ...f, title } : f)) });
+  };
+
+  const removeCustomForm = async (formId) => {
+    const form = couple.customForms.find((f) => f.id === formId);
+    if (!confirm(`Remove "${form?.title || "this form"}" from this couple? The file itself stays in Drive — this just stops tracking it here.`)) return;
+    await patch({ customForms: couple.customForms.filter((f) => f.id !== formId) });
   };
 
   const copyUrl = () => {
@@ -314,7 +372,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
                   Add form
                 </button>
               )}
-              {assigned.length > 0 && (
+              {(assigned.length > 0 || couple.customForms.length > 0) && (
                 <button onClick={onOpenForms} className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-[13px]" style={{ background: bronze, fontFamily: FONT_SANS }}>
                   <FileText size={14} />
                   Fill out forms
@@ -334,7 +392,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
             </div>
           )}
 
-          {assigned.length === 0 ? (
+          {assigned.length === 0 && couple.customForms.length === 0 ? (
             <div className="rounded-lg border p-4 text-[13px]" style={{ borderColor: "#E4DDD0", background: "#FFFFFF", color: "#8A8378", fontFamily: FONT_SANS }}>
               No forms assigned yet. Use "Add form" to pick one uploaded in Settings.
             </div>
@@ -375,42 +433,58 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
                   </div>
                 );
               })}
+              {couple.customForms.map((f) => (
+                <CustomFormRow key={f.id} form={f} coupleId={couple.id} onRename={renameCustomForm} onRemove={removeCustomForm} />
+              ))}
             </div>
           )}
 
           {/* Checklist — from the diocese's Marriage Preparation checklist spreadsheet */}
           <div className="mt-6">
-            <div className="flex items-center gap-2 mb-4">
-              <ClipboardList size={16} color={bronze} />
-              <h3 className="text-[15px]" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Checklist</h3>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <ClipboardList size={16} color={bronze} />
+                <h3 className="text-[15px]" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Checklist</h3>
+              </div>
+              <button
+                onClick={() => setChecklistExpanded((v) => !v)}
+                className="flex items-center gap-1.5 text-[12px]"
+                style={{ color: "#6E675C", fontFamily: FONT_SANS }}
+              >
+                {checklistExpanded ? <><ChevronUp size={13} /> View less</> : <><ChevronDown size={13} /> View more</>}
+              </button>
             </div>
 
-            <div className="mb-6">
-              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>MEETINGS WITH PRIEST</div>
-              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-                <div className="hidden sm:grid grid-cols-[1fr,150px] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
-                  <span>MEETING</span>
-                  <span>DATE COMPLETED</span>
+            {checklistExpanded && (
+              <>
+                <div className="mb-6">
+                  <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>MEETINGS WITH PRIEST</div>
+                  <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+                    <div className="hidden sm:grid grid-cols-[1fr,150px] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
+                      <span>MEETING</span>
+                      <span>DATE COMPLETED</span>
+                    </div>
+                    {MEETINGS_ITEMS.map((item) => (
+                      <MeetingRow key={item.key} item={item} value={checklist.meetings?.[item.key]} onSave={saveMeeting} />
+                    ))}
+                  </div>
                 </div>
-                {MEETINGS_ITEMS.map((item) => (
-                  <MeetingRow key={item.key} item={item} value={checklist.meetings?.[item.key]} onSave={saveMeeting} />
-                ))}
-              </div>
-            </div>
 
-            <div>
-              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>REQUIREMENTS CHECKLIST</div>
-              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-                <div className="hidden sm:grid grid-cols-[1fr,150px,1fr] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
-                  <span>REQUIREMENT</span>
-                  <span>DATE COMPLETED</span>
-                  <span>NOTES</span>
+                <div>
+                  <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>REQUIREMENTS CHECKLIST</div>
+                  <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+                    <div className="hidden sm:grid grid-cols-[1fr,150px,1fr] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
+                      <span>REQUIREMENT</span>
+                      <span>DATE COMPLETED</span>
+                      <span>NOTES</span>
+                    </div>
+                    {REQUIREMENTS_ITEMS.map((item) => (
+                      <RequirementRow key={item.key} item={item} value={checklist.requirements?.[item.key]} onSave={saveRequirement} />
+                    ))}
+                  </div>
                 </div>
-                {REQUIREMENTS_ITEMS.map((item) => (
-                  <RequirementRow key={item.key} item={item} value={checklist.requirements?.[item.key]} onSave={saveRequirement} />
-                ))}
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </section>
 

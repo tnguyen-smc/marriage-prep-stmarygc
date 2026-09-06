@@ -127,8 +127,17 @@ function PageNav({ pageNumber, numPages, onPrev, onNext }) {
 }
 
 export default function FormFillingScreen({ couple, templates, onBack }) {
-  const assignedTemplates = templates.filter((t) => couple.templateIds.includes(t.id));
-  const [activeTemplateId, setActiveTemplateId] = useState(assignedTemplates[0]?.id || null);
+  // Two kinds of fillable items for a couple: templates assigned from
+  // Settings, and forms imported directly from a couple's own pre-existing
+  // Drive folder (see Settings → "Import an existing couple"). Both show
+  // up in the same sidebar and work the same way once selected — the
+  // only difference is which API endpoint fetches/saves their bytes.
+  const items = [
+    ...templates.filter((t) => couple.templateIds.includes(t.id)).map((t) => ({ type: "template", id: t.id, title: t.title })),
+    ...couple.customForms.map((f) => ({ type: "custom", id: f.id, title: f.title })),
+  ];
+
+  const [activeKey, setActiveKey] = useState(items[0] ? `${items[0].type}:${items[0].id}` : null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [loadStatus, setLoadStatus] = useState("idle"); // idle | loading | ready | error
@@ -137,20 +146,19 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   const [errorMessage, setErrorMessage] = useState(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const containerRef = useRef(null);
-  // Caches the loaded PDFDocumentProxy per (coupleId, templateId) for this
-  // screen's lifetime, so switching between assigned forms and back
-  // doesn't re-download and re-parse a file we already have.
+  // Caches the loaded PDFDocumentProxy per (coupleId, item) for this
+  // screen's lifetime, so switching between forms and back doesn't
+  // re-download and re-parse a file we already have.
   const docCacheRef = useRef(new Map());
 
-  const activeTemplate = assignedTemplates.find((t) => t.id === activeTemplateId);
-  const cacheKey = `${couple.id}:${activeTemplateId}`;
+  const activeItem = items.find((it) => `${it.type}:${it.id}` === activeKey) || null;
 
   useEffect(() => {
-    if (activeTemplateId && !assignedTemplates.some((t) => t.id === activeTemplateId)) {
-      setActiveTemplateId(assignedTemplates[0]?.id || null);
+    if (activeKey && !items.some((it) => `${it.type}:${it.id}` === activeKey)) {
+      setActiveKey(items[0] ? `${items[0].type}:${items[0].id}` : null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [couple.templateIds.join(",")]);
+  }, [couple.templateIds.join(","), couple.customForms.map((f) => f.id).join(",")]);
 
   // Measure available width so pages render at a sensible size and stay
   // responsive across iPad/desktop.
@@ -169,12 +177,13 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     setPageNumber(1);
     setSaveStatus("idle");
     setErrorMessage(null);
-    if (!activeTemplateId) {
+    if (!activeItem) {
       setPdfDoc(null);
       setLoadStatus("idle");
       return;
     }
 
+    const cacheKey = `${couple.id}:${activeItem.type}:${activeItem.id}`;
     const cached = docCacheRef.current.get(cacheKey);
     if (cached) {
       setPdfDoc(cached);
@@ -187,9 +196,11 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     setLoadStatus("loading");
     (async () => {
       try {
-        // Always the couple's own copy in their Drive subfolder — never
-        // the shared template master (see ensureCoupleCopy on the server).
-        const buf = await api.couples.templateFile.fetchBytes(couple.id, activeTemplateId);
+        // Always the couple's own copy (in their Drive subfolder) — never
+        // a shared template master. For a "custom" item there's no
+        // master at all; it's the couple's own imported file directly.
+        const fetchBytes = activeItem.type === "template" ? api.couples.templateFile.fetchBytes : api.couples.customFormFile.fetchBytes;
+        const buf = await fetchBytes(couple.id, activeItem.id);
         if (cancelled) return;
         const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
         if (cancelled) return;
@@ -207,21 +218,22 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [couple.id, activeTemplateId]);
+  }, [couple.id, activeKey]);
 
   const handleSave = useCallback(async () => {
-    if (!pdfDoc || !activeTemplateId) return;
+    if (!pdfDoc || !activeItem) return;
     setSaveStatus("saving");
     setErrorMessage(null);
     try {
       const bytes = await pdfDoc.saveDocument();
-      await api.couples.templateFile.save(couple.id, activeTemplateId, bytes);
+      const save = activeItem.type === "template" ? api.couples.templateFile.save : api.couples.customFormFile.save;
+      await save(couple.id, activeItem.id, bytes);
       setSaveStatus("saved");
     } catch (e) {
       setErrorMessage(e.message);
       setSaveStatus("error");
     }
-  }, [pdfDoc, couple.id, activeTemplateId]);
+  }, [pdfDoc, couple.id, activeItem]);
 
   // Prints exactly what's saved in Drive right now — not whatever's
   // sitting unsaved in the in-page editor — by fetching the couple's
@@ -231,11 +243,12 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   // there's no risk of the same ghosting/overlap issue showing up on a
   // printed page.
   const handlePrint = useCallback(async () => {
-    if (!activeTemplateId) return;
+    if (!activeItem) return;
     setPrintStatus("preparing");
     setErrorMessage(null);
     try {
-      const buf = await api.couples.templateFile.fetchBytes(couple.id, activeTemplateId);
+      const fetchBytes = activeItem.type === "template" ? api.couples.templateFile.fetchBytes : api.couples.customFormFile.fetchBytes;
+      const buf = await fetchBytes(couple.id, activeItem.id);
       const blobUrl = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
       const iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
@@ -259,7 +272,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
       setErrorMessage(e.message);
       setPrintStatus("error");
     }
-  }, [couple.id, activeTemplateId]);
+  }, [couple.id, activeItem]);
 
   const numPages = pdfDoc?.numPages || 0;
   const goPrev = () => setPageNumber((p) => Math.max(1, p - 1));
@@ -309,27 +322,30 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
       <div className="flex flex-1 min-h-0 flex-col md:flex-row">
         <div className="flex md:flex-col flex-shrink-0 border-b md:border-b-0 md:border-r overflow-x-auto md:overflow-y-auto md:w-[260px]" style={{ borderColor: "#E4DDD0" }}>
           <div className="hidden md:block px-5 pt-5 pb-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>ASSIGNED FORMS</div>
-          {assignedTemplates.length === 0 && (
+          {items.length === 0 && (
             <div className="px-5 py-4 text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
               No forms assigned yet. Assign one from this couple's profile.
             </div>
           )}
-          {assignedTemplates.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTemplateId(t.id)}
-              className="w-full text-left px-5 py-3.5 border-l-2 flex-shrink-0"
-              style={{ borderColor: activeTemplateId === t.id ? bronze : "transparent", background: activeTemplateId === t.id ? "#FFFFFF" : "transparent" }}
-            >
-              <span className="text-[14.5px]" style={{ fontFamily: FONT_SANS, color: activeTemplateId === t.id ? ink : "#6E675C" }}>{t.title}</span>
-            </button>
-          ))}
+          {items.map((it) => {
+            const key = `${it.type}:${it.id}`;
+            return (
+              <button
+                key={key}
+                onClick={() => setActiveKey(key)}
+                className="w-full text-left px-5 py-3.5 border-l-2 flex-shrink-0"
+                style={{ borderColor: activeKey === key ? bronze : "transparent", background: activeKey === key ? "#FFFFFF" : "transparent" }}
+              >
+                <span className="text-[14.5px]" style={{ fontFamily: FONT_SANS, color: activeKey === key ? ink : "#6E675C" }}>{it.title}</span>
+              </button>
+            );
+          })}
         </div>
 
         <div ref={containerRef} className="flex-1 flex flex-col min-h-0 overflow-y-auto">
-          {activeTemplate && (
+          {activeItem && (
             <div className="px-5 sm:px-8 pt-6 pb-1 flex-shrink-0">
-              <h2 className="text-[22px]" style={{ fontFamily: FONT_SERIF, color: ink }}>{activeTemplate.title}</h2>
+              <h2 className="text-[22px]" style={{ fontFamily: FONT_SERIF, color: ink }}>{activeItem.title}</h2>
               <p className="text-[13px] mt-1.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
                 Tap into any field below to fill it out, then hit Save to Drive when done — no download needed.
               </p>
@@ -344,7 +360,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
             {loadStatus === "error" && (
               <div className="text-[14px] py-6" style={{ color: brick, fontFamily: FONT_SANS }}>{errorMessage || "Couldn't load this couple's copy."}</div>
             )}
-            {loadStatus === "idle" && !activeTemplateId && (
+            {loadStatus === "idle" && !activeItem && (
               <div className="text-[14px] py-6" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Choose a form on the left to get started.</div>
             )}
             {loadStatus === "ready" && pdfDoc && containerWidth > 0 && (

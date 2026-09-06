@@ -148,7 +148,8 @@ this is now two pieces:
   `id, slug, groom, groomEmail, groomPhone, bride, brideEmail, bridePhone,
   weddingDate, prepStartDate, lastAppointment, status, drivePath,
   templateIds, templateData, priest, archived, archivedReason,
-  archivedAt, templateCopies, documents, coupleDriveFolderId, checklist`.
+  archivedAt, templateCopies, documents, coupleDriveFolderId, checklist,
+  customForms`.
   - `slug` is the URL-safe id used in each couple's own address —
     `groomlastname-bridelastname` (e.g. `alvarez-nguyen`). It's generated
     from their names, de-duplicated with a `-2`, `-3` suffix if two
@@ -188,6 +189,14 @@ this is now two pieces:
     webViewLink, uploadedAt } ]` — supporting files the priest uploads to
     the couple (baptismal certificates, dispensations, scans), stored in
     that same subfolder.
+  - `customForms` is **a JSON array**: `[ { id, title, driveFileId } ]` —
+    forms pulled in directly from a couple's own pre-existing Drive
+    folder at import time (see section 5a), not tied to any shared
+    Settings template. `title` starts as the original filename and is
+    editable on the couple's profile. These behave exactly like an
+    assigned template in the form-filling screen (same PDF.js editor,
+    same Save-to-Drive) — the only difference is which id they're
+    fetched/saved by.
 
 - **Real PDF rendering, no `pdf-lib`.** An earlier version of this app used
   `pdf-lib` to read a PDF's AcroForm fields and build an on-screen editor
@@ -362,25 +371,27 @@ a couple who was already in marriage prep and already has their own Drive
 folder with fillable copies sitting in it — normal intake would create a
 *new*, empty subfolder for them, which isn't what you want here.
 
-Fill in their name/contact/wedding date like normal intake, but instead of
-picking forms to assign, paste their **existing** Drive folder's URL or
-id. The backend then:
+Only the groom's and bride's names, plus that existing folder's URL or id,
+are required — email, phone, wedding date, and priest can all be filled
+in later on the couple's profile. Given that, the backend:
 
-1. Sets that couple's `coupleDriveFolderId` directly to the folder you gave
-   it, instead of creating a new one.
-2. Lists every PDF already in that folder and loosely matches each one's
-   filename against your uploaded templates' titles (case/punctuation-
-   insensitive, either containing the other — so "Prenuptial Form.pdf",
-   "Prenuptial Form - Smith Jones", and "PRENUPTIAL_FORM (2)" all match a
-   template titled "Prenuptial Form").
-3. Auto-assigns and links every match, so that couple's existing paperwork
-   shows up already connected — opening "Fill out forms" for them loads
-   their real, existing file, not a fresh empty copy.
-4. Reports back exactly what got matched to what, and lists any PDFs in
-   the folder that didn't match anything (nothing is deleted or
-   overwritten either way — those files just aren't linked to a specific
-   template yet; use "Add form" on the couple's profile and rename the
-   Drive file to match if you want it picked up automatically next time).
+1. Sets that couple's `coupleDriveFolderId` directly to the folder you
+   gave it, instead of creating a new one.
+2. Lists every PDF already in that folder and pulls **all of them** in as
+   this couple's own `customForms` — separate from `templateIds`/
+   `templateCopies`, and not tied to any shared Settings template at all.
+   Old files rarely correspond 1:1 with whatever's been uploaded to
+   Settings since, so rather than trying (and sometimes failing) to match
+   them, every PDF that's actually there just comes along.
+3. Each imported form's title starts as its filename (minus `.pdf`), and
+   is **editable right on the couple's profile** — tap it in the Fillable
+   Forms list — since old files are often labeled inconsistently
+   ("scan001.pdf", "FINAL_v2.pdf", etc.) and this is usually the first
+   thing worth cleaning up after an import.
+4. "Fill out forms" and "Preview PDF" work on these exactly like a normal
+   assigned template — same PDF.js in-page editor, same Save-to-Drive.
+   Removing one from the couple (the small trash icon) only stops
+   tracking it; the file itself is left alone in Drive.
 
 Admin only, since pointing two different couples at the same folder by
 mistake would mix up real records.

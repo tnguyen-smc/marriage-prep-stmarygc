@@ -20,6 +20,7 @@ const HEADER = [
   "templateIds", "templateData", "priest",
   "archived", "archivedReason", "archivedAt",
   "templateCopies", "documents", "coupleDriveFolderId", "checklist",
+  "customForms",
 ];
 
 // JSON-blob columns (templateData, templateCopies, documents) keep the
@@ -36,6 +37,7 @@ function parseRow(r) {
     templateCopies: r.templateCopies ? JSON.parse(r.templateCopies) : {},
     documents: r.documents ? JSON.parse(r.documents) : [],
     checklist: r.checklist ? JSON.parse(r.checklist) : { requirements: {}, meetings: {} },
+    customForms: r.customForms ? JSON.parse(r.customForms) : [],
     archived: r.archived === "true" || r.archived === true,
   };
 }
@@ -73,21 +75,6 @@ function extractFolderId(input) {
   const trimmed = (input || "").trim();
   const match = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
   return match ? match[1] : trimmed;
-}
-
-/** Loosely compares a template's title against an existing file's name —
- *  used when importing a couple who already has files sitting in their
- *  own Drive folder from before this app existed, where file names won't
- *  exactly match this app's own naming convention. Strips everything but
- *  letters/numbers and checks either contains the other, so "Prenuptial
- *  Form.pdf", "Prenuptial Form - Smith Jones", and "PRENUPTIAL_FORM
- *  (2)" all match a template titled "Prenuptial Form". */
-function looselyMatches(a, b) {
-  const normalize = (s) => s.toLowerCase().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]/g, "");
-  const na = normalize(a);
-  const nb = normalize(b);
-  if (!na || !nb) return false;
-  return na.includes(nb) || nb.includes(na);
 }
 
 /** Guarantees the slug is unique across all couples (appends -2, -3, ...). */
@@ -233,6 +220,7 @@ router.post("/", requireAuth, async (req, res) => {
       documents: "[]",
       coupleDriveFolderId: "",
       checklist: JSON.stringify({ requirements: {}, meetings: {} }),
+      customForms: "[]",
     };
     await appendRow(req.oauth2Client, TAB, HEADER, row);
     res.json(parseRow(row));
@@ -253,6 +241,7 @@ router.patch("/:idOrSlug", requireAuth, async (req, res) => {
     if (req.body.templateCopies) updated.templateCopies = JSON.stringify(req.body.templateCopies);
     if (req.body.documents) updated.documents = JSON.stringify(req.body.documents);
     if (req.body.checklist) updated.checklist = JSON.stringify(req.body.checklist);
+    if (req.body.customForms) updated.customForms = JSON.stringify(req.body.customForms);
     if (typeof req.body.archived === "boolean") updated.archived = req.body.archived ? "true" : "false";
 
     // Names changed -> refresh the slug so the URL keeps matching, but
@@ -299,6 +288,44 @@ router.put(
     } catch (e) {
       console.error(e);
       res.status(e.status || 500).json({ error: e.message });
+    }
+  }
+);
+
+/* ---------- Custom forms: files imported directly from a couple's own
+   pre-existing Drive folder, not tied to any shared Settings template.
+   See POST /import below for how these get created. ---------- */
+
+router.get("/:idOrSlug/customForms/:formId/file", requireAuth, async (req, res) => {
+  try {
+    const match = await findCouple(req.oauth2Client, req.params.idOrSlug);
+    if (!match) return res.status(404).json({ error: "Couple not found" });
+    const customForms = match.customForms ? JSON.parse(match.customForms) : [];
+    const form = customForms.find((f) => f.id === req.params.formId);
+    if (!form) return res.status(404).json({ error: "Form not found" });
+    await downloadFileStream(req.oauth2Client, form.driveFileId, res);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put(
+  "/:idOrSlug/customForms/:formId/file",
+  requireAuth,
+  express.raw({ type: "application/pdf", limit: "25mb" }),
+  async (req, res) => {
+    try {
+      const match = await findCouple(req.oauth2Client, req.params.idOrSlug);
+      if (!match) return res.status(404).json({ error: "Couple not found" });
+      const customForms = match.customForms ? JSON.parse(match.customForms) : [];
+      const form = customForms.find((f) => f.id === req.params.formId);
+      if (!form) return res.status(404).json({ error: "Form not found" });
+      await updateFileBytes(req.oauth2Client, form.driveFileId, req.body);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
     }
   }
 );
@@ -419,33 +446,28 @@ router.post("/:idOrSlug/events", requireAuth, async (req, res) => {
 router.post("/import", requireAuth, requireAdmin, async (req, res) => {
   try {
     const b = req.body;
-    if (!b.groom || !b.bride || !b.weddingDate) {
-      return res.status(400).json({ error: "Groom, bride, and wedding date are required" });
+    if (!b.groom || !b.bride) {
+      return res.status(400).json({ error: "Groom and bride names are required" });
     }
     const folderId = extractFolderId(b.existingFolder);
     if (!folderId) {
       return res.status(400).json({ error: "An existing Drive folder (URL or id) is required" });
     }
 
-    const [{ rows: templateRows }, existingFiles] = await Promise.all([
-      readRows(req.oauth2Client, TEMPLATES_TAB),
-      listFilesInFolder(req.oauth2Client, folderId),
-    ]);
-
-    const templateCopies = {};
-    const templateIds = [];
-    const matched = [];
-    for (const template of templateRows) {
-      const file = existingFiles.find((f) => f.mimeType === "application/pdf" && looselyMatches(f.name, template.title));
-      if (file) {
-        templateCopies[template.id] = file.id;
-        templateIds.push(template.id);
-        matched.push({ template: template.title, file: file.name });
-      }
-    }
-    const unmatchedFiles = existingFiles
-      .filter((f) => f.mimeType === "application/pdf" && !Object.values(templateCopies).includes(f.id))
-      .map((f) => f.name);
+    // Rather than trying to match these against uploaded Settings
+    // templates by name (old pre-launch files rarely correspond 1:1 with
+    // whatever's been uploaded since), every PDF actually sitting in the
+    // folder becomes one of this couple's own "custom forms" — a form
+    // that's just theirs, with an editable title, not tied to any shared
+    // template. The priest can rename each one from the profile page,
+    // since old files are often labeled inconsistently.
+    const existingFiles = await listFilesInFolder(req.oauth2Client, folderId);
+    const pdfFiles = existingFiles.filter((f) => f.mimeType === "application/pdf");
+    const customForms = pdfFiles.map((f) => ({
+      id: uuid(),
+      title: f.name.replace(/\.pdf$/i, ""),
+      driveFileId: f.id,
+    }));
 
     const { rows } = await readRows(req.oauth2Client, TAB);
     const slug = uniqueSlug(makeSlug(b.groom, b.bride), rows.map((r) => r.slug).filter(Boolean));
@@ -460,25 +482,26 @@ router.post("/import", requireAuth, requireAdmin, async (req, res) => {
       bride: b.bride,
       brideEmail: b.brideEmail || "",
       bridePhone: b.bridePhone || "",
-      weddingDate: b.weddingDate,
+      weddingDate: b.weddingDate || "",
       prepStartDate: b.prepStartDate || today,
       lastAppointment: b.lastAppointment || today,
       status: b.status || "In Progress",
       drivePath: "",
-      templateIds: templateIds.join(","),
+      templateIds: "",
       templateData: "{}",
       priest: b.priest || "",
       archived: "false",
       archivedReason: "",
       archivedAt: "",
-      templateCopies: JSON.stringify(templateCopies),
+      templateCopies: "{}",
       documents: "[]",
       coupleDriveFolderId: folderId,
       checklist: JSON.stringify({ requirements: {}, meetings: {} }),
+      customForms: JSON.stringify(customForms),
     };
     await appendRow(req.oauth2Client, TAB, HEADER, row);
 
-    res.json({ couple: parseRow(row), matched, unmatchedFiles });
+    res.json({ couple: parseRow(row), importedForms: customForms.map((f) => f.title) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
