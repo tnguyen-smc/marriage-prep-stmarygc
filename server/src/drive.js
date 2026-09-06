@@ -49,6 +49,31 @@ export async function deleteFile(auth, fileId) {
   await drive.files.delete({ fileId, ...SHARED_DRIVE_SUPPORT });
 }
 
+/** Looks for an existing, non-trashed child of `parentId` with this exact
+ *  name (and mimeType, if given). Used to make folder/file creation
+ *  idempotent: if two requests race to create the same couple's
+ *  subfolder or the same template copy at the same moment, both check
+ *  Drive itself (not just the Sheet's cached id, which can't be trusted
+ *  under a race) and converge on the one that actually exists rather
+ *  than each creating its own duplicate. Returns the id, or null. */
+export async function findChildByName(auth, parentId, name, mimeType) {
+  if (!parentId) return null;
+  const drive = driveClient(auth);
+  const escaped = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const q = [`'${parentId}' in parents`, `name = '${escaped}'`, "trashed = false", mimeType && `mimeType = '${mimeType}'`]
+    .filter(Boolean)
+    .join(" and ");
+  const res = await drive.files.list({
+    q,
+    fields: "files(id, name)",
+    pageSize: 1,
+    includeItemsFromAllDrives: true,
+    corpora: "allDrives",
+    ...SHARED_DRIVE_SUPPORT,
+  });
+  return res.data.files?.[0]?.id || null;
+}
+
 /** Creates a new Drive folder (used to give each couple their own
  *  subfolder under the configured "Couples" parent folder). Returns the
  *  new folder's id. */

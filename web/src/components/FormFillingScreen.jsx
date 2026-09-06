@@ -7,6 +7,8 @@ import DynamicFieldForm from "./DynamicFieldForm.jsx";
 import PdfPreviewModal from "./PdfPreviewModal.jsx";
 import { api } from "../api.js";
 
+const EMPTY_VALUES = {};
+
 export default function FormFillingScreen({ couple, templates, onBack, onCoupleUpdated }) {
   const assignedTemplates = templates.filter((t) => couple.templateIds.includes(t.id));
   const [activeTemplateId, setActiveTemplateId] = useState(assignedTemplates[0]?.id || null);
@@ -22,7 +24,7 @@ export default function FormFillingScreen({ couple, templates, onBack, onCoupleU
   const [templateData, setTemplateData] = useState(couple.templateData || {});
   const saveTimer = useRef(null);
 
-  const activeValues = templateData[activeTemplateId] || {};
+  const activeValues = templateData[activeTemplateId] || EMPTY_VALUES;
   const { fields, previewUrl, status: pdfStatus, errorMessage: pdfErrorMessage, saveStatus: driveSaveStatus } = useTemplatePdf(couple.id, activeTemplateId, activeValues);
   const activeTemplate = assignedTemplates.find((t) => t.id === activeTemplateId);
   const combinedStatus =

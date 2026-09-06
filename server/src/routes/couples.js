@@ -5,7 +5,7 @@ import { v4 as uuid } from "uuid";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import { readRows, appendRow, updateRow, getSheetIdByTitle, deleteRow } from "../sheets.js";
-import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile, createFolder } from "../drive.js";
+import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile, createFolder, findChildByName } from "../drive.js";
 import { createEvent } from "../calendar.js";
 import { getConfigValue } from "../config.js";
 
@@ -96,7 +96,17 @@ async function ensureCoupleFolder(auth, coupleRow) {
     );
   }
 
-  const folderId = await createFolder(auth, `${coupleRow.groom}_${coupleRow.bride}`, couplesParentId);
+  const folderName = `${coupleRow.groom}_${coupleRow.bride}`;
+
+  // Check Drive itself first, not just the Sheet's cached id. If two
+  // requests raced to open this couple's first form at nearly the same
+  // moment, both would otherwise see an empty coupleDriveFolderId and
+  // each create their own subfolder — this is what caused a separate
+  // subfolder to appear per template instead of one shared one. Looking
+  // the name up in Drive directly means both requests converge on
+  // whichever one actually got created first.
+  const existing = await findChildByName(auth, couplesParentId, folderName, "application/vnd.google-apps.folder");
+  const folderId = existing || (await createFolder(auth, folderName, couplesParentId));
 
   // Mutate the caller's row object in place (rather than spreading it
   // into a new one) so that if the caller goes on to save this same row
@@ -119,7 +129,8 @@ async function ensureCoupleCopy(auth, coupleRow, templateId) {
   if (!template) throw Object.assign(new Error("Template not found"), { status: 404 });
 
   const coupleFolderId = await ensureCoupleFolder(auth, coupleRow);
-  const newFileId = await copyFile(auth, template.driveFileId, template.title, coupleFolderId);
+  const existingCopy = await findChildByName(auth, coupleFolderId, template.title, "application/pdf");
+  const newFileId = existingCopy || (await copyFile(auth, template.driveFileId, template.title, coupleFolderId));
 
   copies[templateId] = newFileId;
   await saveRow(auth, { ...coupleRow, templateCopies: JSON.stringify(copies) });
