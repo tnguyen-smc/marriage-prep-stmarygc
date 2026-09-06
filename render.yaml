@@ -1,0 +1,46 @@
+# Render Blueprint — deploys the Express backend.
+#
+# Render can read this automatically ("New +" -> "Blueprint" -> pick this
+# repo). The values marked sync:false are secrets: Render will prompt you
+# for them in the dashboard instead of reading them from this file, so
+# nothing sensitive is ever committed.
+services:
+  - type: web
+    name: marriage-prep-st-mary-catholic-church
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      # The GitHub Pages site allowed to call this API.
+      - key: CLIENT_URL
+        value: https://tnguyen-smc.github.io/marriage-prep-stmarygc
+
+      # Must match an Authorized redirect URI on the OAuth client exactly.
+      - key: GOOGLE_REDIRECT_URI
+        value: https://marriage-prep-st-mary-catholic-church.onrender.com/api/auth/google/callback
+
+      # Frontend (github.io) and backend (onrender.com) are different
+      # sites, so the session cookie has to be cross-site. Both required.
+      - key: COOKIE_SAMESITE
+        value: none
+      - key: COOKIE_SECURE
+        value: "true"
+
+      # Render generates a strong random value for this automatically.
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # Prompted for in the Render dashboard — never stored in the repo.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false

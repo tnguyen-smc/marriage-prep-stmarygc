@@ -14,6 +14,49 @@ in a real Google Drive folder. Login is real Google OAuth.
 
 ---
 
+## 0. Quickstart for this deployment
+
+This copy is **pre-configured** for:
+
+| | |
+|---|---|
+| Frontend (GitHub Pages) | `https://tnguyen-smc.github.io/marriage-prep-stmarygc/` |
+| Backend (Render) | `https://marriage-prep-st-mary-catholic-church.onrender.com` |
+
+Both URLs are already set in `web/vite.config.js`, `web/src/api.js`, and
+`render.yaml`, so you can drop these files into the repo as-is — no path
+editing required.
+
+**What you still have to do once:**
+
+1. **Push to GitHub**, then Settings → Pages → Source: **GitHub Actions**.
+   The frontend deploys itself on every push to `main`. You do *not* need
+   to set `VITE_API_URL` — the Render URL is already the built-in default.
+2. **Deploy the backend on Render** (New + → Blueprint → this repo;
+   `render.yaml` configures it). Render will prompt you for the five
+   secrets it can't guess: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   `GOOGLE_SHEET_ID`, `GOOGLE_DRIVE_FOLDER_ID`, `ADMIN_EMAIL`.
+3. **In Google Cloud Console**, add this exact Authorized redirect URI to
+   your OAuth client:
+   ```
+   https://marriage-prep-st-mary-catholic-church.onrender.com/api/auth/google/callback
+   ```
+   and add this Authorized JavaScript origin:
+   ```
+   https://tnguyen-smc.github.io
+   ```
+4. **Create the Google Sheet tabs** (`Couples`, `Templates`, `Priests`)
+   with the header rows in section 5, and share the Sheet + Drive folder
+   with every priest's account.
+
+> **Heads-up on Render's free plan:** the service sleeps after ~15 minutes
+> idle, so the first sign-in after a quiet spell can take 30–60 seconds
+> while it wakes. It isn't broken — but if a priest reports "the login
+> button did nothing," this is usually why. Render's paid Starter tier
+> removes the sleep.
+
+---
+
 ## 1. Why this needed a backend
 
 GitHub Pages only serves static files — it can't hold your Google OAuth
@@ -33,6 +76,7 @@ this is now two pieces:
 ```
 .
 ├── .github/workflows/deploy.yml   # builds & deploys web/ to GitHub Pages
+├── render.yaml                     # Render blueprint for the backend
 ├── web/                            # React frontend
 │   ├── vite.config.js              # READ before deploying (base path)
 │   ├── .env.example                # VITE_API_URL — where the backend lives
@@ -218,8 +262,8 @@ this is now two pieces:
 Every couple gets a permanent, shareable URL built from their surnames:
 
 ```
-https://<your-site>/couples/<groom-lastname>-<bride-lastname>
-   e.g. https://<your-site>/couples/alvarez-nguyen
+https://tnguyen-smc.github.io/marriage-prep-stmarygc/couples/<groom>-<bride>
+   e.g. .../marriage-prep-stmarygc/couples/alvarez-nguyen
 ```
 
 The slug is generated at intake, de-duplicated automatically if two
@@ -262,7 +306,7 @@ couple an invitation.
 |---|---|
 | **Title** | `Marriage prep — <Groom> & <Bride>`, editable before you create it |
 | **Guests** | The couple's email address from their profile |
-| **Description** | The URL of the couple's profile card, e.g. `Couple profile: https://<your-site>/couples/alvarez-nguyen` |
+| **Description** | The URL of the couple's profile card, e.g. `Couple profile: https://tnguyen-smc.github.io/marriage-prep-stmarygc/couples/alvarez-nguyen` |
 | **Start** | The date and time you pick |
 | **End** | Start + the duration you pick (30 / 45 / 60 / 90 minutes) |
 | **Time zone** | Detected from the priest's browser |
@@ -346,20 +390,24 @@ grant access.
 ## 10. Deploying the frontend to GitHub Pages, and pointing to it from Gantry
 
 If you don't have DNS access for a custom domain, use the project-page URL
-GitHub gives you for free (`https://<username>.github.io/<repo-name>/`)
+GitHub gives you for free (`https://tnguyen-smc.github.io/marriage-prep-stmarygc/`)
 and link/embed *that* from a Gantry article.
 
 1. Push this repo to GitHub.
 2. **Settings → Pages → Source: GitHub Actions.** The included
    `.github/workflows/deploy.yml` builds `web/` and publishes it whenever
    you push to `main`. Your site will be live at
-   `https://<username>.github.io/<repo-name>/`.
-3. In the repo's **Settings → Secrets and variables → Actions → Variables**,
-   add a repository variable `VITE_API_URL` set to your deployed backend's
-   URL (see section 11) — the workflow passes it into the build.
-4. In `web/vite.config.js`, set `REPO_NAME` to match your actual GitHub
-   repo name, and leave `USE_CUSTOM_DOMAIN = false` (this is the default —
-   only flip it to `true` later if you get DNS access for a custom domain).
+   `https://tnguyen-smc.github.io/marriage-prep-stmarygc/`.
+3. In the repo's **Settings → Secrets and variables → Actions**, add
+   `VITE_API_URL` set to your deployed backend's URL — as a *variable* or
+   a *secret*, either works. This is the only value that belongs in
+   GitHub; every `GOOGLE_*` value goes on your backend host instead. See
+   section 11 for the full breakdown and an important warning about
+   `GOOGLE_CLIENT_SECRET`.
+4. `web/vite.config.js` is **already set** to `REPO_NAME =
+   "marriage-prep-stmarygc"` with `USE_CUSTOM_DOMAIN = false`, matching
+   your Pages URL. Only change it if the repo is renamed or you later get
+   DNS access for a custom domain.
 
 ### Pointing to it from a Gantry article
 
@@ -372,7 +420,7 @@ the GitHub Pages URL directly:
 
 ```html
 <a
-  href="https://<username>.github.io/<repo-name>/"
+  href="https://tnguyen-smc.github.io/marriage-prep-stmarygc/"
   target="_blank"
   rel="noopener"
   style="display:inline-block;padding:14px 24px;background:#2B3A42;color:#FAF7F0;
@@ -394,9 +442,9 @@ feeling integrated with a small full-page redirect trick instead of an
 iframe — a Gantry article whose HTML source is just:
 
 ```html
-<script>window.location.replace("https://<username>.github.io/<repo-name>/");</script>
+<script>window.location.replace("https://tnguyen-smc.github.io/marriage-prep-stmarygc/");</script>
 <noscript>
-  <a href="https://<username>.github.io/<repo-name>/">Continue to Marriage Preparation</a>
+  <a href="https://tnguyen-smc.github.io/marriage-prep-stmarygc/">Continue to Marriage Preparation</a>
 </noscript>
 ```
 
@@ -406,7 +454,107 @@ once it gets there — Google sign-in and cookies work normally.
 
 ---
 
-## 11. Deploying the backend
+## 11. Configuring env without .env files (GitHub Secrets, hosting panels)
+
+`.env` files are only for running things **on your own machine**. You never
+commit them, and in production nothing reads them — each half of the app
+gets its configuration from a different place. This trips people up, so:
+
+| Variable | Where it belongs in production | Why |
+|---|---|---|
+| `VITE_API_URL` | **Optional.** GitHub → Settings → Secrets and variables → Actions | Read at **build time**. Already defaults to the Render URL in `web/src/api.js`, so you only set this to point at a *different* backend |
+| `GOOGLE_CLIENT_ID` | Your **backend host's** env panel (Render/Railway/Fly) | Read at **runtime** by the Express server |
+| `GOOGLE_CLIENT_SECRET` | Your backend host's env panel | Same — and must never leave the server |
+| `GOOGLE_REDIRECT_URI` | Your backend host's env panel | Same |
+| `GOOGLE_SHEET_ID` | Your backend host's env panel | Same |
+| `GOOGLE_DRIVE_FOLDER_ID` | Your backend host's env panel | Same |
+| `ADMIN_EMAIL` | Your backend host's env panel | Same |
+| `SESSION_SECRET` | Your backend host's env panel | Same |
+| `CLIENT_URL` | Your backend host's env panel | Same |
+| `COOKIE_SAMESITE` / `COOKIE_SECURE` | Your backend host's env panel | Same |
+
+### The short version
+
+**GitHub Secrets can only configure the frontend build.** GitHub Actions
+runs, builds the static site, and stops — it isn't running your server, so
+it has no way to hand values to Express. The backend lives on a completely
+separate host, and that host has its own place to enter environment
+variables (Render calls it "Environment", Railway calls it "Variables",
+Fly uses `fly secrets set`). That's where every `GOOGLE_*` value goes.
+
+### Serious warning about `GOOGLE_CLIENT_SECRET`
+
+**Never put `GOOGLE_CLIENT_SECRET` (or any other real secret) into a
+GitHub Actions variable/secret used by the `web/` build.** Anything the
+Vite build can read gets compiled into `assets/index-*.js`, which is
+downloaded by every visitor and publicly readable on GitHub Pages. Naming
+it a "secret" in GitHub does not protect it once it's baked into a public
+bundle — it only hides it from the Actions log.
+
+A GitHub *secret* and a GitHub *variable* are equally exposed once built
+into frontend code; the difference is only whether the value is masked in
+CI logs. That's why `VITE_API_URL` is fine there (it's just a public URL)
+and nothing else is.
+
+If you ever do leak the client secret, rotate it immediately: Google Cloud
+Console → Credentials → your OAuth client → **Add secret**, then delete
+the old one and update your backend host's env.
+
+### Setting the frontend variable
+
+Either tab works — the workflow reads a variable first, then falls back to
+a secret:
+
+1. GitHub repo → **Settings → Secrets and variables → Actions**
+2. **Variables** tab → *New repository variable* (recommended — it's not
+   sensitive, and you can see its value later), or **Secrets** tab → *New
+   repository secret*
+3. Name: `VITE_API_URL`, value: your backend URL, e.g.
+   `https://marriage-prep-api.onrender.com` (no trailing slash)
+4. Re-run the deploy: **Actions** tab → latest run → *Re-run all jobs*.
+   The value is read at build time, so changing it requires a rebuild —
+   it will not take effect until the workflow runs again.
+
+### Local development still uses .env
+
+On your own machine, `.env` files are the easy path:
+
+```bash
+cd server && cp .env.example .env   # then fill it in
+cd web    && cp .env.example .env.local
+```
+
+If you'd rather not create files even locally, you can pass values inline
+instead:
+
+```bash
+cd server
+GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... GOOGLE_SHEET_ID=... \
+GOOGLE_DRIVE_FOLDER_ID=... ADMIN_EMAIL=... SESSION_SECRET=dev \
+CLIENT_URL=http://localhost:5173 \
+GOOGLE_REDIRECT_URI=http://localhost:4000/api/auth/google/callback \
+npm run dev
+```
+
+---
+
+## 12. Deploying the backend
+
+> Already handled for you in `render.yaml` and `server/src/index.js`, but
+> worth knowing if you move hosts:
+>
+> - **`app.set("trust proxy", 1)`** — Render terminates HTTPS at its proxy
+>   and forwards plain HTTP internally. Without trusting the proxy,
+>   Express thinks the connection is insecure and refuses to set the
+>   `Secure` session cookie, so login silently fails: the cookie never
+>   stores and every request looks signed-out.
+> - **CORS uses the *origin*, not `CLIENT_URL` verbatim.** On a project
+>   Pages site `CLIENT_URL` contains a path
+>   (`https://tnguyen-smc.github.io/marriage-prep-stmarygc`), but a
+>   browser's `Origin` header is only `https://tnguyen-smc.github.io`.
+>   The server strips the path before comparing, otherwise every request
+>   would be rejected.
+
 
 GitHub Pages **cannot** run `server/`. You need a real Node host. Any of
 these work well for a prototype and have a free tier:
@@ -430,7 +578,7 @@ Whichever you use:
 
 ---
 
-## 12. What's real vs. still simulated
+## 13. What's real vs. still simulated
 
 **Real:**
 - Google OAuth login.
@@ -461,7 +609,7 @@ Whichever you use:
 
 ---
 
-## 13. Dependencies
+## 14. Dependencies
 
 **Frontend:** React 18, Vite 5, Tailwind 3, `lucide-react`, `pdf-lib`.
 

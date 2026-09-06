@@ -1,4 +1,15 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+// Where the Express backend lives.
+//
+// Order of precedence:
+//   1. VITE_API_URL, set at build time (GitHub Actions variable/secret,
+//      or web/.env.local for local dev)
+//   2. the deployed Render backend, so a plain `npm run build` with no
+//      configuration still produces a working site
+//
+// For local development against a local server, create web/.env.local
+// containing: VITE_API_URL=http://localhost:4000
+export const API_URL =
+  import.meta.env.VITE_API_URL || "https://marriage-prep-st-mary-catholic-church.onrender.com";
 
 async function apiFetch(path, opts = {}) {
   const isFormData = opts.body instanceof FormData;
