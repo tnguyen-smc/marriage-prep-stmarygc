@@ -42,6 +42,7 @@ export const api = {
       fd.append("file", file);
       return apiFetch("/api/templates", { method: "POST", body: fd });
     },
+    rename: (id, title) => apiFetch(`/api/templates/${id}`, { method: "PUT", body: JSON.stringify({ title }) }),
     remove: (id) => apiFetch(`/api/templates/${id}`, { method: "DELETE" }),
     fetchBytes: async (id) => {
       const res = await fetch(`${API_URL}/api/templates/${id}/file`, { credentials: "include" });
@@ -67,6 +68,7 @@ export const api = {
     get: (idOrSlug) => apiFetch(`/api/couples/${idOrSlug}`),
     create: (payload) => apiFetch("/api/couples", { method: "POST", body: JSON.stringify(payload) }),
     update: (id, payload) => apiFetch(`/api/couples/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    remove: (id) => apiFetch(`/api/couples/${id}`, { method: "DELETE" }),
  
     documents: {
       upload: (coupleId, name, file) => {
@@ -105,4 +107,3 @@ export const api = {
     },
   },
 };
- 

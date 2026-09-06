@@ -3,7 +3,7 @@ import multer from "multer";
 import { v4 as uuid } from "uuid";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
-import { readRows, appendRow, getSheetIdByTitle, deleteRow } from "../sheets.js";
+import { readRows, appendRow, updateRow, getSheetIdByTitle, deleteRow } from "../sheets.js";
 import { uploadPdf, downloadFileStream, deleteFile } from "../drive.js";
 import { getConfigValue } from "../config.js";
 
@@ -51,6 +51,26 @@ router.get("/:id/file", requireAuth, async (req, res) => {
     const match = rows.find((r) => r.id === req.params.id);
     if (!match) return res.status(404).json({ error: "Template not found" });
     await downloadFileStream(req.oauth2Client, match.driveFileId, res);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Rename a template — updates only the display title shown at intake and
+// in Settings; the underlying Drive file and its id are untouched, so
+// every couple's existing copy (which was made from this file, not this
+// title) is completely unaffected. Admin only.
+router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await readRows(req.oauth2Client, TAB);
+    const match = rows.find((r) => r.id === req.params.id);
+    if (!match) return res.status(404).json({ error: "Template not found" });
+    if (!req.body.title || !req.body.title.trim()) return res.status(400).json({ error: "Title is required" });
+
+    const rowObj = { id: match.id, title: req.body.title.trim(), driveFileId: match.driveFileId, createdAt: match.createdAt };
+    await updateRow(req.oauth2Client, TAB, match._row, HEADER, rowObj);
+    res.json(rowObj);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

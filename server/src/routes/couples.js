@@ -3,7 +3,8 @@ import express from "express";
 import multer from "multer";
 import { v4 as uuid } from "uuid";
 import { requireAuth } from "../middleware/requireAuth.js";
-import { readRows, appendRow, updateRow } from "../sheets.js";
+import { requireAdmin } from "../middleware/requireAdmin.js";
+import { readRows, appendRow, updateRow, getSheetIdByTitle, deleteRow } from "../sheets.js";
 import { copyFile, updateFileBytes, downloadFileStream, uploadFile, deleteFile, createFolder } from "../drive.js";
 import { createEvent } from "../calendar.js";
 import { getConfigValue } from "../config.js";
@@ -30,7 +31,7 @@ const HEADER = [
 function parseRow(r) {
   return {
     ...r,
-    templateIds: r.templateIds ? r.templateIds.split(",").filter(Boolean) : [],
+    templateIds: r.templateIds ? r.templateIds.split(",").map((s) => s.trim()).filter(Boolean) : [],
     templateData: r.templateData ? JSON.parse(r.templateData) : {},
     templateCopies: r.templateCopies ? JSON.parse(r.templateCopies) : {},
     documents: r.documents ? JSON.parse(r.documents) : [],
@@ -170,7 +171,16 @@ router.post("/", requireAuth, async (req, res) => {
       coupleDriveFolderId: "",
     };
     await appendRow(req.oauth2Client, TAB, HEADER, row);
-    res.json(parseRow(row));
+
+    // Create the couple's Drive subfolder right away rather than waiting
+    // for the first form to be opened — so it's visible in Drive
+    // immediately after intake, matching what an admin browsing the
+    // Couples folder would expect to see.
+    const { rows: freshRows } = await readRows(req.oauth2Client, TAB);
+    const freshRow = freshRows.find((r) => r.id === row.id);
+    await ensureCoupleFolder(req.oauth2Client, freshRow);
+
+    res.json(parseRow(freshRow));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -283,6 +293,25 @@ router.delete("/:idOrSlug/documents/:docId", requireAuth, async (req, res) => {
     const remaining = documents.filter((d) => d.id !== req.params.docId);
     const saved = await saveRow(req.oauth2Client, { ...match, documents: JSON.stringify(remaining) });
     res.json(parseRow(saved));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete("/:idOrSlug", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await readRows(req.oauth2Client, TAB);
+    const match = rows.find((r) => r.id === req.params.idOrSlug || r.slug === req.params.idOrSlug);
+    if (!match) return res.status(404).json({ error: "Couple not found" });
+
+    // Deletes the couple's record only — their Drive subfolder (PDF
+    // copies and any uploaded documents) is intentionally left alone.
+    // Deleting real files is destructive and hard to undo; a priest who
+    // wants those files gone too can delete the Drive folder directly.
+    const sheetIdNumeric = await getSheetIdByTitle(req.oauth2Client, TAB);
+    await deleteRow(req.oauth2Client, sheetIdNumeric, match._row);
+    res.json({ ok: true });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

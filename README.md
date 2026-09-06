@@ -152,7 +152,11 @@ this is now two pieces:
     the Pastor, Parochial Vicar, and admin all see every couple.
   - `archived` is `"true"`/`"false"`. Archiving (with a required reason)
     hides them from the normal directory tabs but keeps the record under
-    the "Archived" tab — nothing is deleted.
+    the "Archived" tab — nothing is deleted. **Deleting** a couple (a
+    small, deliberately understated control on their profile page, admin
+    only) removes their Sheet row permanently, but leaves their Drive
+    subfolder and every file in it untouched — Archive is the everyday
+    tool; Delete is for genuine mistakes (e.g. a duplicate test entry).
   - `templateIds` is a comma-separated list of assigned template ids.
   - `templateData` is **one JSON blob**: `{ "<templateId>": { "<pdf field
     name>": "value" } }` — what the priest has typed, used to repopulate
@@ -213,6 +217,9 @@ this is now two pieces:
    ```
    id | title | driveFileId | createdAt
    ```
+   `title` can be renamed any time from Settings — it only changes what's
+   shown at intake and in the templates list; the underlying Drive file
+   is untouched, so every couple's existing copy is unaffected.
 
    **Couples** tab, row 1:
    ```
@@ -262,14 +269,13 @@ this is now two pieces:
        └── ...
    ```
 
-   The first time a priest opens a template tab for a couple, or uploads
-   a supporting document to their profile, the app creates that couple's
-   subfolder under whichever folder **Couples folder** points to (named
-   `Groom_Bride`) and remembers its id (`coupleDriveFolderId` in the
-   Sheet) — every file that belongs to that couple, template copies and
-   documents alike, lands in that one subfolder from then on. Nothing
-   ever gets uploaded flat into a shared folder alongside every other
-   couple's files.
+   The couple's own subfolder is created immediately at intake (named
+   `Groom_Bride`, under whichever folder **Couples folder** points to) —
+   its id is remembered as `coupleDriveFolderId` in the Sheet. Every file
+   that belongs to that couple from then on, template copies and
+   documents alike, lands in that one subfolder. Nothing ever gets
+   uploaded flat into a shared folder alongside every other couple's
+   files.
 
    Changing either folder in Settings takes effect immediately, no
    redeploy required — paste the folder's full URL or just its id,

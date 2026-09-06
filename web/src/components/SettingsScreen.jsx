@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { ChevronLeft, Upload, FileText, Trash2, Save, Plus, FolderOpen } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { ChevronLeft, Upload, FileText, Trash2, Save, Plus, FolderOpen, Check } from "lucide-react";
 import { ink, bronze, sage, brick, FONT_SERIF, FONT_SANS, inputStyle } from "../theme.js";
 import { api } from "../api.js";
 
@@ -78,6 +78,63 @@ function PriestRow({ priest, onSaved, onRemoved }) {
   );
 }
 
+function TemplateRow({ template, onRenamed, onDeleted }) {
+  const [title, setTitle] = useState(template.title);
+  const [saving, setSaving] = useState(false);
+
+  // Same stale-state issue as PriestRow above — resync on every update.
+  useEffect(() => {
+    setTitle(template.title);
+  }, [template.id, template.title]);
+
+  const dirty = title.trim() !== template.title && title.trim().length > 0;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.templates.rename(template.id, title.trim());
+      onRenamed();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Delete this template? Couples already using it keep their saved answers, but the fillable PDF is removed.")) return;
+    await api.templates.remove(template.id);
+    onDeleted();
+  };
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      <FileText size={16} color={bronze} className="flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full text-[14px] bg-transparent outline-none rounded px-1 -mx-1 focus:bg-white"
+          style={{ fontFamily: FONT_SANS, color: ink }}
+        />
+        <div className="text-[11px] mt-0.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
+          Uploaded {new Date(template.createdAt).toLocaleDateString()}
+        </div>
+      </div>
+      <button
+        onClick={handleSave}
+        disabled={!dirty || saving}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] text-white flex-shrink-0"
+        style={{ background: dirty ? sage : "#B7AF9F", fontFamily: FONT_SANS, cursor: dirty ? "pointer" : "not-allowed" }}
+      >
+        <Save size={13} />
+        {saving ? "Saving…" : "Rename"}
+      </button>
+      <button onClick={handleDelete} className="p-2 rounded-lg hover:bg-black/5 flex-shrink-0">
+        <Trash2 size={16} color={brick} />
+      </button>
+    </div>
+  );
+}
+
 function FolderField({ label, value, onChange }) {
   return (
     <div className="mb-4">
@@ -127,7 +184,7 @@ function DriveFoldersSetting() {
   };
 
   return (
-    <div className="rounded-lg border p-5 mb-8" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+    <div className="rounded-lg border p-5" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
       <h2 className="text-[16px] mb-1" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Drive folders</h2>
       <p className="text-[13px] mb-4" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
         Paste each folder's full Drive URL or just its id — either works, including a folder inside a Shared Drive. Changes take effect immediately, no redeploy needed.
@@ -160,6 +217,9 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [addingPriest, setAddingPriest] = useState(false);
+  const [justUploaded, setJustUploaded] = useState(null); // title of the most recently uploaded template
+  const fileInputRef = useRef(null);
+  const successTimer = useRef(null);
 
   const canUpload = title.trim() && file && !uploading;
 
@@ -168,21 +228,23 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
     setUploading(true);
     setError(null);
     try {
-      await api.templates.upload(title.trim(), file);
+      const uploadedTitle = title.trim();
+      await api.templates.upload(uploadedTitle, file);
       setTitle("");
       setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       onTemplatesChanged();
+
+      // Transient confirmation so it's obvious the upload actually landed,
+      // rather than the form just quietly clearing.
+      setJustUploaded(uploadedTitle);
+      clearTimeout(successTimer.current);
+      successTimer.current = setTimeout(() => setJustUploaded(null), 5000);
     } catch (e) {
       setError(e.message);
     } finally {
       setUploading(false);
     }
-  };
-
-  const handleDeleteTemplate = async (id) => {
-    if (!confirm("Delete this template? Couples already using it keep their saved answers, but the fillable PDF is removed.")) return;
-    await api.templates.remove(id);
-    onTemplatesChanged();
   };
 
   const handleAddPriest = async () => {
@@ -202,10 +264,8 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
         <h1 className="text-[20px]" style={{ fontFamily: FONT_SERIF, color: ink }}>Settings</h1>
       </div>
 
-      <div className="max-w-2xl mx-auto px-5 sm:px-8 py-8">
-        <DriveFoldersSetting />
-
-        <div className="mb-8">
+      <div className="max-w-2xl mx-auto px-5 sm:px-8 py-8 space-y-8">
+        <div>
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-[16px]" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Priests</h2>
             <button
@@ -233,7 +293,7 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
           </div>
         </div>
 
-        <div className="rounded-lg border p-5 mb-8" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+        <div className="rounded-lg border p-5" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
           <h2 className="text-[16px] mb-4" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Upload a fillable PDF</h2>
 
           <div className="mb-4">
@@ -244,6 +304,7 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
           <div className="mb-5">
             <div className="text-[12px] mb-1.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Fillable PDF file</div>
             <input
+              ref={fileInputRef}
               type="file"
               accept="application/pdf"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
@@ -263,31 +324,29 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
             <Upload size={16} />
             {uploading ? "Uploading…" : "Upload template"}
           </button>
+
+          {justUploaded && (
+            <div className="flex items-center gap-2 mt-4 px-3.5 py-2.5 rounded-lg text-[13px]" style={{ background: "#EEF2EE", color: sage, fontFamily: FONT_SANS }}>
+              <Check size={15} />
+              "{justUploaded}" uploaded and ready to assign at intake.
+            </div>
+          )}
         </div>
 
-        <h2 className="text-[16px] mb-3" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Existing templates</h2>
-        {templates.length === 0 ? (
-          <div className="text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>No templates uploaded yet.</div>
-        ) : (
-          <div className="rounded-lg border divide-y" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-            {templates.map((t) => (
-              <div key={t.id} className="flex items-center justify-between px-4 py-3.5">
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText size={16} color={bronze} className="flex-shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[14px] truncate" style={{ fontFamily: FONT_SANS, color: ink }}>{t.title}</div>
-                    <div className="text-[11px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
-                      Uploaded {new Date(t.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                </div>
-                <button onClick={() => handleDeleteTemplate(t.id)} className="p-2 rounded-lg hover:bg-black/5 flex-shrink-0">
-                  <Trash2 size={16} color={brick} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <div>
+          <h2 className="text-[16px] mb-3" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Existing templates</h2>
+          {templates.length === 0 ? (
+            <div className="text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>No templates uploaded yet.</div>
+          ) : (
+            <div className="rounded-lg border divide-y" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+              {templates.map((t) => (
+                <TemplateRow key={t.id} template={t} onRenamed={onTemplatesChanged} onDeleted={onTemplatesChanged} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <DriveFoldersSetting />
       </div>
     </div>
   );

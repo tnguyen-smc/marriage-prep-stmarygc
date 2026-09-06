@@ -50,13 +50,16 @@ function EditableField({ label, value, type = "text", icon, onSave }) {
   );
 }
 
-export default function CoupleProfileScreen({ couple, templates, priests, isAdmin, onBack, onOpenForms, onCoupleUpdated }) {
+export default function CoupleProfileScreen({ couple, templates, priests, isAdmin, onBack, onOpenForms, onCoupleUpdated, onCoupleDeleted }) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [addFormOpen, setAddFormOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [justUploaded, setJustUploaded] = useState(null); // name of the most recently uploaded document
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileRef = useRef(null);
+  const successTimer = useRef(null);
 
   const assigned = templates.filter((t) => couple.templateIds.includes(t.id));
   const unassigned = templates.filter((t) => !couple.templateIds.includes(t.id));
@@ -74,6 +77,9 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
     try {
       const updated = await api.couples.documents.upload(couple.id, file.name, file);
       onCoupleUpdated(updated);
+      setJustUploaded(file.name);
+      clearTimeout(successTimer.current);
+      successTimer.current = setTimeout(() => setJustUploaded(null), 5000);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -95,6 +101,21 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
     navigator.clipboard?.writeText(profileUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleDeleteCouple = async () => {
+    const ok = confirm(
+      `Permanently delete ${couple.groom} & ${couple.bride}? This removes their record entirely — this can't be undone. ` +
+      `Their Drive folder and its files are NOT deleted. If you just want to stop tracking them without losing anything, use Archive instead.`
+    );
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await api.couples.remove(couple.id);
+      onCoupleDeleted(couple.id);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -254,6 +275,13 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
             Baptismal or confirmation certificates, dispensations, prior-marriage paperwork — anything worth keeping on file.
           </p>
 
+          {justUploaded && (
+            <div className="flex items-center gap-2 mb-3 px-3.5 py-2.5 rounded-lg text-[13px]" style={{ background: "#EEF2EE", color: sage, fontFamily: FONT_SANS }}>
+              <Check size={15} />
+              "{justUploaded}" uploaded and saved to this couple's Drive folder.
+            </div>
+          )}
+
           {couple.documents.length === 0 ? (
             <div className="rounded-lg border p-4 text-[13px]" style={{ borderColor: "#E4DDD0", background: "#FFFFFF", color: "#8A8378", fontFamily: FONT_SANS }}>
               No documents uploaded yet.
@@ -287,14 +315,26 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
           )}
         </section>
 
-        {!couple.archived && (
-          <section className="pt-2">
+        <section className="pt-2 flex items-center justify-between">
+          {!couple.archived ? (
             <button onClick={() => setArchiveOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[13px]" style={{ border: "1px solid #E4DDD0", color: brick, fontFamily: FONT_SANS }}>
               <Archive size={15} />
               Archive this couple
             </button>
-          </section>
-        )}
+          ) : <span />}
+          {isAdmin && (
+            <button
+              onClick={handleDeleteCouple}
+              disabled={deleting}
+              className="flex items-center gap-1 text-[11px] opacity-50 hover:opacity-100"
+              style={{ color: brick, fontFamily: FONT_SANS }}
+              title="Permanently delete this couple's record (rare — use Archive instead in almost every case)"
+            >
+              <Trash2 size={11} />
+              {deleting ? "Deleting…" : "Delete couple"}
+            </button>
+          )}
+        </section>
       </div>
 
       {calendarOpen && (

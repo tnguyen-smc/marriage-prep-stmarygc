@@ -17,13 +17,10 @@ export function ToggleSwitch({ checked, onChange }) {
       type="button"
       onClick={onChange}
       aria-pressed={checked}
-      className="w-12 h-7 rounded-full relative transition-colors flex-shrink-0"
-      style={{ background: checked ? sage : "#E4DDD0" }}
+      className="w-12 h-7 rounded-full flex items-center p-0.5 transition-colors flex-shrink-0"
+      style={{ background: checked ? sage : "#E4DDD0", justifyContent: checked ? "flex-end" : "flex-start" }}
     >
-      <span
-        className="absolute top-0.5 w-6 h-6 rounded-full bg-white transition-transform shadow-sm"
-        style={{ transform: checked ? "translateX(22px)" : "translateX(2px)" }}
-      />
+      <span className="w-6 h-6 rounded-full bg-white shadow-sm transition-all" />
     </button>
   );
 }

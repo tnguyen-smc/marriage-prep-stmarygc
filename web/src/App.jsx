@@ -50,6 +50,11 @@ export default function App() {
     setCouples((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
   };
 
+  const handleCoupleDeleted = (id) => {
+    setCouples((prev) => prev.filter((c) => c.id !== id));
+    go("/");
+  };
+
   const isAdmin = profile?.role === "admin";
 
   if (authStatus === "checking") return <Spinner label="Checking your Google sign-in…" />;
@@ -98,6 +103,7 @@ export default function App() {
         onBack={() => go("/")}
         onOpenForms={() => go(`/couples/${couple.slug}/forms`)}
         onCoupleUpdated={handleCoupleUpdated}
+        onCoupleDeleted={handleCoupleDeleted}
       />
     );
   }
