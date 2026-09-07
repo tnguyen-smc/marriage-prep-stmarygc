@@ -29,8 +29,8 @@ const MEETINGS_ITEMS = [
   { key: "vows", label: "Vows" },
 ];
 
-/** Reusable smooth Date Input component */
-function DatePickerInput({ value, onChange, placeholder = "Select date...", style = {} }) {
+/** Smooth Date Picker input that only allows picking from the calendar */
+function DatePickerInput({ value, onChange, style = {} }) {
   const inputRef = useRef(null);
 
   const triggerPicker = () => {
@@ -54,7 +54,11 @@ function DatePickerInput({ value, onChange, placeholder = "Select date...", styl
         type="date"
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.preventDefault()} // Block manual typing entirely
+        onClick={(e) => {
+          e.stopPropagation();
+          triggerPicker();
+        }}
         style={{
           ...inputStyle,
           cursor: "pointer",
@@ -68,7 +72,7 @@ function DatePickerInput({ value, onChange, placeholder = "Select date...", styl
   );
 }
 
-/** An inline field that shows text until you tap Edit, then saves on blur/selection. */
+/** Inline field for text inputs */
 function EditableField({ label, value, type = "text", icon, onSave }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || "");
