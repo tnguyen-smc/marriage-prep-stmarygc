@@ -86,36 +86,48 @@ function EditableField({ label, value, type = "text", icon, onSave }) {
         {label}
       </div>
       {editing ? (
-        type === "date" ? (
-          <DatePickerInput
-            value={draft}
-            onChange={(val) => {
-              setDraft(val);
-              commit(val);
-            }}
-            style={{ fontSize: "15px" }}
-          />
-        ) : (
-          <input
-            autoFocus
-            type={type}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => commit()}
-            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-            style={{ ...inputStyle, fontSize: "15px" }}
-          />
-        )
+        <input
+          autoFocus
+          type={type}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => commit()}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          style={{ ...inputStyle, fontSize: "15px" }}
+        />
       ) : (
         <button
           onClick={() => { setDraft(value || ""); setEditing(true); }}
           className="w-full text-left px-3 py-2.5 rounded-lg border border-transparent hover:border-[#E4DDD0] group flex items-center justify-between gap-2"
           style={{ fontFamily: FONT_SANS, color: ink, fontSize: "15px" }}
         >
-          <span>{type === "date" ? formatDate(value) : (value || "—")}</span>
+          <span>{value || "—"}</span>
           <Pencil size={13} className="opacity-0 group-hover:opacity-100 flex-shrink-0" color="#B7AF9F" />
         </button>
       )}
+    </div>
+  );
+}
+
+/** Dedicated Detail Date Field wrapping DatePickerInput for Details of Couple */
+function DetailDateField({ label, value, icon, onSave }) {
+  const handleDateChange = (newDate) => {
+    if (newDate !== (value || "")) {
+      onSave(newDate);
+    }
+  };
+
+  return (
+    <div>
+      <div className="text-[12px] mb-1 flex items-center gap-1.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
+        {icon}
+        {label}
+      </div>
+      <DatePickerInput
+        value={value || ""}
+        onChange={handleDateChange}
+        style={{ fontSize: "15px" }}
+      />
     </div>
   );
 }
@@ -216,7 +228,6 @@ function CustomFormRow({ form, coupleId, onRename, onRemove }) {
 
 export default function CoupleProfileScreen({ couple, templates, priests, isAdmin, onBack, onOpenForms, onCoupleUpdated, onCoupleDeleted }) {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const [checklistExpanded, setChecklistExpanded] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [addFormOpen, setAddFormOpen] = useState(false);
@@ -371,9 +382,9 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
                 <EditableField label="Bride's email" value={couple.brideEmail} icon={<Mail size={12} />} onSave={(v) => patch({ brideEmail: v })} />
                 <EditableField label="Groom's phone" value={couple.groomPhone} icon={<Phone size={12} />} onSave={(v) => patch({ groomPhone: v })} />
                 <EditableField label="Bride's phone" value={couple.bridePhone} icon={<Phone size={12} />} onSave={(v) => patch({ bridePhone: v })} />
-                <EditableField label="Started prep" value={couple.prepStartDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ prepStartDate: v })} />
-                <EditableField label="Wedding date" value={couple.weddingDate} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ weddingDate: v })} />
-                <EditableField label="Last appointment" value={couple.lastAppointment} type="date" icon={<Calendar size={12} />} onSave={(v) => patch({ lastAppointment: v })} />
+                <DetailDateField label="Started prep" value={couple.prepStartDate} icon={<Calendar size={12} />} onSave={(v) => patch({ prepStartDate: v })} />
+                <DetailDateField label="Wedding date" value={couple.weddingDate} icon={<Calendar size={12} />} onSave={(v) => patch({ weddingDate: v })} />
+                <DetailDateField label="Last appointment" value={couple.lastAppointment} icon={<Calendar size={12} />} onSave={(v) => patch({ lastAppointment: v })} />
                 {isAdmin ? (
                   <div>
                     <div className="text-[12px] mb-1" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>Priest</div>
@@ -489,45 +500,34 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
                 <ClipboardList size={16} color={bronze} />
                 <h3 className="text-[15px]" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Checklist</h3>
               </div>
-              <button
-                onClick={() => setChecklistExpanded((v) => !v)}
-                className="flex items-center gap-1.5 text-[12px]"
-                style={{ color: "#6E675C", fontFamily: FONT_SANS }}
-              >
-                {checklistExpanded ? <><ChevronUp size={13} /> View less</> : <><ChevronDown size={13} /> View more</>}
-              </button>
             </div>
 
-            {checklistExpanded && (
-              <>
-                <div className="mb-6">
-                  <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>MEETINGS WITH PRIEST</div>
-                  <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-                    <div className="hidden sm:grid grid-cols-[1fr,150px] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
-                      <span>MEETING</span>
-                      <span>DATE COMPLETED</span>
-                    </div>
-                    {MEETINGS_ITEMS.map((item) => (
-                      <MeetingRow key={item.key} item={item} value={checklist.meetings?.[item.key]} onSave={saveMeeting} />
-                    ))}
-                  </div>
+            <div className="mb-6">
+              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>MEETINGS WITH PRIEST</div>
+              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+                <div className="hidden sm:grid grid-cols-[1fr,150px] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
+                  <span>MEETING</span>
+                  <span>DATE COMPLETED</span>
                 </div>
+                {MEETINGS_ITEMS.map((item) => (
+                  <MeetingRow key={item.key} item={item} value={checklist.meetings?.[item.key]} onSave={saveMeeting} />
+                ))}
+              </div>
+            </div>
 
-                <div>
-                  <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>REQUIREMENTS CHECKLIST</div>
-                  <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-                    <div className="hidden sm:grid grid-cols-[1fr,150px,1fr] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
-                      <span>REQUIREMENT</span>
-                      <span>DATE COMPLETED</span>
-                      <span>NOTES</span>
-                    </div>
-                    {REQUIREMENTS_ITEMS.map((item) => (
-                      <RequirementRow key={item.key} item={item} value={checklist.requirements?.[item.key]} onSave={saveRequirement} />
-                    ))}
-                  </div>
+            <div>
+              <div className="text-[13px] mb-2 tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>REQUIREMENTS CHECKLIST</div>
+              <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
+                <div className="hidden sm:grid grid-cols-[1fr,150px,1fr] gap-3 px-4 py-2 text-[11px] tracking-wide" style={{ color: "#8A8378", fontFamily: FONT_SANS, background: "#FAF7F0" }}>
+                  <span>REQUIREMENT</span>
+                  <span>DATE COMPLETED</span>
+                  <span>NOTES</span>
                 </div>
-              </>
-            )}
+                {REQUIREMENTS_ITEMS.map((item) => (
+                  <RequirementRow key={item.key} item={item} value={checklist.requirements?.[item.key]} onSave={saveRequirement} />
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
