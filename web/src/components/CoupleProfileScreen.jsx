@@ -80,9 +80,14 @@ function EditableField({ label, value, type = "text", icon, onSave }) {
  *  and shouldn't fire a save on every character typed. */
 function RequirementRow({ item, value, onSave }) {
   const [notes, setNotes] = useState(value?.notes || "");
+  const [date, setDate] = useState(value?.dateCompleted || "");
 
   const commitNotes = () => {
     if (notes !== (value?.notes || "")) onSave(item.key, { ...value, notes });
+  };
+
+  const commitDate = () => {
+    if (date !== (value?.dateCompleted || "")) onSave(item.key, { ...value, dateCompleted: date });
   };
 
   return (
@@ -90,8 +95,9 @@ function RequirementRow({ item, value, onSave }) {
       <div className="text-[14px] pt-2" style={{ fontFamily: FONT_SANS, color: ink }}>{item.label}</div>
       <input
         type="date"
-        value={value?.dateCompleted || ""}
-        onChange={(e) => onSave(item.key, { ...value, dateCompleted: e.target.value })}
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        onBlur={commitDate}
         style={{ ...inputStyle, fontSize: "13px", padding: "9px 10px" }}
       />
       <input
