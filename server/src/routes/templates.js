@@ -16,7 +16,7 @@ const HEADER = ["id", "title", "driveFileId", "createdAt"];
 // and the intake checklist can both show them.
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     res.json(rows.map(({ _row, ...r }) => r));
   } catch (e) {
     console.error(e);
@@ -47,7 +47,7 @@ router.post("/", requireAuth, requireAdmin, upload.single("file"), async (req, r
 // pull files out of your Drive folder by guessing IDs.
 router.get("/:id/file", requireAuth, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const match = rows.find((r) => r.id === req.params.id);
     if (!match) return res.status(404).json({ error: "Template not found" });
     await downloadFileStream(req.oauth2Client, match.driveFileId, res);
@@ -63,7 +63,7 @@ router.get("/:id/file", requireAuth, async (req, res) => {
 // title) is completely unaffected. Admin only.
 router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const match = rows.find((r) => r.id === req.params.id);
     if (!match) return res.status(404).json({ error: "Template not found" });
     if (!req.body.title || !req.body.title.trim()) return res.status(400).json({ error: "Title is required" });
@@ -79,7 +79,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
 
 router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const match = rows.find((r) => r.id === req.params.id);
     if (!match) return res.status(404).json({ error: "Template not found" });
     await deleteFile(req.oauth2Client, match.driveFileId).catch(() => {});

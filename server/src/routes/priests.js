@@ -13,7 +13,7 @@ const HEADER = ["id", "title", "name", "email"];
 // their priest picker.
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const result = [];
     for (const r of rows) {
       if (r.id) {
@@ -53,7 +53,7 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
 // else), name, or email. Admin only.
 router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const match = rows.find((r) => r.id === req.params.id);
     if (!match) return res.status(404).json({ error: "Priest not found" });
 
@@ -72,7 +72,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
 // for new assignments anymore.
 router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const match = rows.find((r) => r.id === req.params.id);
     if (!match) return res.status(404).json({ error: "Priest not found" });
 

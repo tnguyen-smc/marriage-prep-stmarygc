@@ -141,6 +141,24 @@ this is now two pieces:
 
 ## 3. How data flows (so editing it later is easy)
 
+> **Sheet headers self-heal.** Every read and write checks that a tab's
+> actual header row (row 1) has every column the code expects, and
+> appends any missing ones automatically if it doesn't — you don't have
+> to remember to hand-edit an existing Sheet every time a new column
+> gets added to `HEADER` in some route. This also un-orphans data:
+> `appendRow`/`updateRow` always write values positionally according to
+> the code's column order, so if a column existed in code before the
+> Sheet's header row caught up, that data was still genuinely written —
+> just invisible on read, because `readRows` maps values back using
+> whatever header labels actually exist. The classic symptom is a couple
+> whose imported forms show up right after import, then vanish on the
+> next hard refresh — nothing was lost, the header just needed to catch
+> up, which now happens by itself (see `ensureHeader` in
+> `server/src/sheets.js`). It refuses to touch anything if the existing
+> header doesn't match the expected order at all (e.g. someone manually
+> reordered columns) — that's a real conflict a human needs to resolve,
+> not something to silently paper over.
+
 - **Templates** = one row per uploaded PDF in the "Templates" sheet tab:
   `id, title, driveFileId, createdAt`. The actual PDF bytes live in Drive;
   the Sheet just points to them.

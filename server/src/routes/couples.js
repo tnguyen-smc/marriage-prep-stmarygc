@@ -86,7 +86,7 @@ function uniqueSlug(base, existingSlugs) {
 }
 
 async function findCouple(auth, idOrSlug) {
-  const { rows } = await readRows(auth, TAB);
+  const { rows } = await readRows(auth, TAB, HEADER);
   return rows.find((r) => r.id === idOrSlug || r.slug === idOrSlug);
 }
 
@@ -169,7 +169,7 @@ async function ensureCoupleCopy(auth, coupleRow, templateId) {
 // `priest` records who's responsible, not who's allowed to look.
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     res.json(rows.map(({ _row, ...r }) => parseRow(r)));
   } catch (e) {
     console.error(e);
@@ -193,7 +193,7 @@ router.post("/", requireAuth, async (req, res) => {
   try {
     const b = req.body;
     const today = new Date().toISOString().slice(0, 10);
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const slug = uniqueSlug(makeSlug(b.groom, b.bride), rows.map((r) => r.slug).filter(Boolean));
 
     const row = {
@@ -247,7 +247,7 @@ router.patch("/:idOrSlug", requireAuth, async (req, res) => {
     // Names changed -> refresh the slug so the URL keeps matching, but
     // only if that wouldn't collide with another couple's slug.
     if ((req.body.groom && req.body.groom !== match.groom) || (req.body.bride && req.body.bride !== match.bride)) {
-      const { rows } = await readRows(req.oauth2Client, TAB);
+      const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
       const others = rows.filter((r) => r.id !== match.id).map((r) => r.slug).filter(Boolean);
       updated.slug = uniqueSlug(makeSlug(updated.groom, updated.bride), others);
     }
@@ -384,7 +384,7 @@ router.delete("/:idOrSlug/documents/:docId", requireAuth, async (req, res) => {
 
 router.delete("/:idOrSlug", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const match = rows.find((r) => r.id === req.params.idOrSlug || r.slug === req.params.idOrSlug);
     if (!match) return res.status(404).json({ error: "Couple not found" });
 
@@ -469,7 +469,7 @@ router.post("/import", requireAuth, requireAdmin, async (req, res) => {
       driveFileId: f.id,
     }));
 
-    const { rows } = await readRows(req.oauth2Client, TAB);
+    const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
     const slug = uniqueSlug(makeSlug(b.groom, b.bride), rows.map((r) => r.slug).filter(Boolean));
     const today = new Date().toISOString().slice(0, 10);
 
