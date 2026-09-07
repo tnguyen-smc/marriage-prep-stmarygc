@@ -11,11 +11,6 @@ import ArchiveCoupleModal from "./ArchiveCoupleModal.jsx";
 import UploadDocumentModal from "./UploadDocumentModal.jsx";
 import { api, API_URL } from "../api.js";
 
-// From the diocese's own "Checklist for Marriage Preparation" spreadsheet.
-// Fixed lists (not admin-editable templates) — these are the two tables
-// on that sheet, minus the name/contact-info rows and the schedule
-// button, which aren't needed here since that information already lives
-// on this same profile page.
 const REQUIREMENTS_ITEMS = [
   { key: "greenWitnessForm", label: "Green Witness Form" },
   { key: "baptismalForms", label: "Recent Baptismal Form for both parties, with notations (within 6 months)" },
@@ -34,14 +29,54 @@ const MEETINGS_ITEMS = [
   { key: "vows", label: "Vows" },
 ];
 
-/** An inline field that shows text until you tap Edit, then saves on blur. */
+/** Reusable smooth Date Input component */
+function DatePickerInput({ value, onChange, placeholder = "Select date...", style = {} }) {
+  const inputRef = useRef(null);
+
+  const triggerPicker = () => {
+    if (inputRef.current) {
+      if ("showPicker" in HTMLInputElement.prototype) {
+        try {
+          inputRef.current.showPicker();
+        } catch (err) {
+          inputRef.current.focus();
+        }
+      } else {
+        inputRef.current.focus();
+      }
+    }
+  };
+
+  return (
+    <div className="relative w-full cursor-pointer" onClick={triggerPicker}>
+      <input
+        ref={inputRef}
+        type="date"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          ...inputStyle,
+          cursor: "pointer",
+          fontSize: "13px",
+          padding: "9px 10px",
+          width: "100%",
+          ...style,
+        }}
+      />
+    </div>
+  );
+}
+
+/** An inline field that shows text until you tap Edit, then saves on blur/selection. */
 function EditableField({ label, value, type = "text", icon, onSave }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || "");
 
-  const commit = async () => {
+  const commit = async (newValue) => {
+    const valToSave = newValue !== undefined ? newValue : draft;
     setEditing(false);
-    if (draft !== value) await onSave(draft);
+    if (valToSave !== value) await onSave(valToSave);
   };
 
   return (
@@ -51,15 +86,26 @@ function EditableField({ label, value, type = "text", icon, onSave }) {
         {label}
       </div>
       {editing ? (
-        <input
-          autoFocus
-          type={type}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          style={{ ...inputStyle, fontSize: "15px" }}
-        />
+        type === "date" ? (
+          <DatePickerInput
+            value={draft}
+            onChange={(val) => {
+              setDraft(val);
+              commit(val);
+            }}
+            style={{ fontSize: "15px" }}
+          />
+        ) : (
+          <input
+            autoFocus
+            type={type}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => commit()}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            style={{ ...inputStyle, fontSize: "15px" }}
+          />
+        )
       ) : (
         <button
           onClick={() => { setDraft(value || ""); setEditing(true); }}
@@ -74,31 +120,26 @@ function EditableField({ label, value, type = "text", icon, onSave }) {
   );
 }
 
-/** One row of the Requirements Checklist: label, a date picker, and a
- *  notes field that only saves on blur (not per keystroke) — dates are
- *  cheap, single discrete events, but a note could be a full sentence
- *  and shouldn't fire a save on every character typed. */
+/** Requirement Row using DatePickerInput */
 function RequirementRow({ item, value, onSave }) {
   const [notes, setNotes] = useState(value?.notes || "");
-  const [date, setDate] = useState(value?.dateCompleted || "");
 
   const commitNotes = () => {
     if (notes !== (value?.notes || "")) onSave(item.key, { ...value, notes });
   };
 
-  const commitDate = () => {
-    if (date !== (value?.dateCompleted || "")) onSave(item.key, { ...value, dateCompleted: date });
+  const handleDateChange = (newDate) => {
+    if (newDate !== (value?.dateCompleted || "")) {
+      onSave(item.key, { ...value, dateCompleted: newDate });
+    }
   };
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-[1fr,150px,1fr] gap-3 items-start py-3.5 px-4 border-b last:border-b-0" style={{ borderColor: "#E4DDD0" }}>
       <div className="text-[14px] pt-2" style={{ fontFamily: FONT_SANS, color: ink }}>{item.label}</div>
-      <input
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value)}
-        onBlur={commitDate}
-        style={{ ...inputStyle, fontSize: "13px", padding: "9px 10px" }}
+      <DatePickerInput
+        value={value?.dateCompleted || ""}
+        onChange={handleDateChange}
       />
       <input
         value={notes}
@@ -111,25 +152,25 @@ function RequirementRow({ item, value, onSave }) {
   );
 }
 
-/** One row of Meetings with Priest: label + date only, no notes. */
+/** Meeting Row using DatePickerInput */
 function MeetingRow({ item, value, onSave }) {
+  const handleDateChange = (newDate) => {
+    if (newDate !== (value?.dateCompleted || "")) {
+      onSave(item.key, newDate);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-[1fr,150px] gap-3 items-center py-3.5 px-4 border-b last:border-b-0" style={{ borderColor: "#E4DDD0" }}>
       <div className="text-[14px]" style={{ fontFamily: FONT_SANS, color: ink }}>{item.label}</div>
-      <input
-        type="date"
+      <DatePickerInput
         value={value?.dateCompleted || ""}
-        onChange={(e) => onSave(item.key, e.target.value)}
-        style={{ ...inputStyle, fontSize: "13px", padding: "9px 10px" }}
+        onChange={handleDateChange}
       />
     </div>
   );
 }
 
-/** One row for a couple-specific custom form (imported directly from
- *  their existing Drive folder, not tied to any shared template). The
- *  title is always editable in place — the whole point of these is that
- *  old files are often labeled inconsistently and need renaming. */
 function CustomFormRow({ form, coupleId, onRename, onRemove }) {
   const [title, setTitle] = useState(form.title);
 
@@ -180,7 +221,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [addFormOpen, setAddFormOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [justUploaded, setJustUploaded] = useState(null); // title of the most recently uploaded document
+  const [justUploaded, setJustUploaded] = useState(null);
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const successTimer = useRef(null);
@@ -222,10 +263,6 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
     setAddFormOpen(false);
   };
 
-  // Only unassigns — deliberately does NOT touch templateCopies, so the
-  // couple's actual filled PDF stays exactly as it is in Drive. Adding
-  // the same form back later finds that same copy again rather than
-  // creating a fresh, empty one.
   const removeForm = async (templateId) => {
     const template = templates.find((t) => t.id === templateId);
     if (!confirm(`Remove "${template?.title || "this form"}" from this couple? Their filled copy stays in Drive — adding it back later picks up right where they left off.`)) return;
@@ -307,7 +344,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
           </div>
         )}
 
-        {/* Details — collapsible */}
+        {/* Details */}
         <section>
           <h2 className="text-[16px] mb-4" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Details of Couple</h2>
           <div className="rounded-lg border" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
@@ -445,7 +482,7 @@ export default function CoupleProfileScreen({ couple, templates, priests, isAdmi
             </div>
           )}
 
-          {/* Checklist — from the diocese's Marriage Preparation checklist spreadsheet */}
+          {/* Checklist */}
           <div className="mt-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">

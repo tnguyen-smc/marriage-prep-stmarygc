@@ -19,8 +19,7 @@ export default function CoupleCard({ couple, onOpen }) {
       <div className="flex items-start justify-between mb-3 gap-3">
         <div className="min-w-0 text-[18px] leading-snug" style={{ fontFamily: FONT_SERIF, color: ink }}>
           <span className="block truncate">{groom.first} {groom.last}</span>
-          <span className="block truncate" style={{ color: "#8A8378", fontSize: "13px", fontFamily: FONT_SANS, marginTop: "1px" }}>&amp;</span>
-          <span className="block truncate">{bride.first} {bride.last}</span>
+          <span className="block truncate">&amp; {bride.first} {bride.last}</span>
         </div>
         <StatusPill status={couple.status} />
       </div>
