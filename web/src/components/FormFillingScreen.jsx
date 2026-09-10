@@ -147,8 +147,12 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved | error
   const [printStatus, setPrintStatus] = useState("idle"); // idle | preparing | error
   const [errorMessage, setErrorMessage] = useState(null);
-  // True once anything has been typed into a field since the last save.
-  const [dirty, setDirty] = useState(false);
+  // Keys ("type:id") of every form with unsaved edits — not just the one
+  // on screen. Forms stay loaded in docCacheRef when you switch away, so
+  // their edits are still sitting in memory unsaved; tracking a single
+  // boolean for the active form only would let Back walk off and drop
+  // them silently.
+  const [dirtyKeys, setDirtyKeys] = useState(() => new Set());
   // Shown when Back is pressed with unsaved edits: null | "prompt" | "saving"
   const [exitPrompt, setExitPrompt] = useState(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -159,20 +163,33 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   const docCacheRef = useRef(new Map());
 
   const activeItem = items.find((it) => `${it.type}:${it.id}` === activeKey) || null;
+  const dirty = activeKey ? dirtyKeys.has(activeKey) : false;
+
+  const markDirty = useCallback((key) => {
+    setDirtyKeys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, []);
+  const markClean = useCallback((key) => {
+    setDirtyKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const cacheKeyFor = useCallback((item) => `${couple.id}:${item.type}:${item.id}`, [couple.id]);
 
   // PDF.js writes every field edit into the document's annotationStorage,
   // and calls onSetModified the first time that storage goes from clean
   // to dirty. Hooking it is what lets us know there are unsaved changes
   // without tracking each field ourselves — the same storage handleSave
-  // already reads from.
+  // already reads from. The hook is left in place when you switch forms
+  // (no teardown) so a cached document keeps reporting its own edits.
   useEffect(() => {
-    if (!pdfDoc) return;
-    const storage = pdfDoc.annotationStorage;
-    storage.onSetModified = () => setDirty(true);
-    return () => {
-      storage.onSetModified = null;
-    };
-  }, [pdfDoc]);
+    if (!pdfDoc || !activeKey) return;
+    const key = activeKey;
+    pdfDoc.annotationStorage.onSetModified = () => markDirty(key);
+  }, [pdfDoc, activeKey, markDirty]);
 
   useEffect(() => {
     if (activeKey && !items.some((it) => `${it.type}:${it.id}` === activeKey)) {
@@ -196,8 +213,9 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
 
   useEffect(() => {
     setPageNumber(1);
+    // Deliberately does NOT clear dirty state: switching forms doesn't
+    // save anything, so the form you're leaving still has unsaved edits.
     setSaveStatus("idle");
-    setDirty(false);
     setErrorMessage(null);
     if (!activeItem) {
       setPdfDoc(null);
@@ -242,46 +260,67 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [couple.id, activeKey]);
 
-  // Returns true only if the write to Drive actually succeeded, so
-  // callers (Back, Print) can decide whether to carry on.
+  // Writes one form's in-memory edits to Drive. Works for any loaded
+  // form, not just the visible one, so Back can flush several at once.
+  // Returns true only if the write actually succeeded.
+  const saveItem = useCallback(async (item) => {
+    const key = `${item.type}:${item.id}`;
+    const doc = docCacheRef.current.get(cacheKeyFor(item));
+    if (!doc) return true; // never loaded — nothing to lose
+    const bytes = await doc.saveDocument();
+    const save = item.type === "template" ? api.couples.templateFile.save : api.couples.customFormFile.save;
+    await save(couple.id, item.id, bytes);
+    markClean(key);
+    // saveDocument() resets the storage's own modified flag, so re-arm
+    // the hook for the next round of edits on this document.
+    doc.annotationStorage.onSetModified = () => markDirty(key);
+    return true;
+  }, [couple.id, cacheKeyFor, markClean, markDirty]);
+
+  // The header's Save button — the visible form only.
   const handleSave = useCallback(async () => {
     if (!pdfDoc || !activeItem) return false;
     setSaveStatus("saving");
     setErrorMessage(null);
     try {
-      const bytes = await pdfDoc.saveDocument();
-      const save = activeItem.type === "template" ? api.couples.templateFile.save : api.couples.customFormFile.save;
-      await save(couple.id, activeItem.id, bytes);
+      await saveItem(activeItem);
       setSaveStatus("saved");
-      setDirty(false);
-      // pdfDoc.saveDocument() resets the storage's own modified flag, so
-      // re-arm the hook for the next round of edits.
-      pdfDoc.annotationStorage.onSetModified = () => setDirty(true);
       return true;
     } catch (e) {
       setErrorMessage(e.message);
       setSaveStatus("error");
       return false;
     }
-  }, [pdfDoc, couple.id, activeItem]);
+  }, [pdfDoc, activeItem, saveItem]);
 
-  // Back: leave immediately if nothing's unsaved, otherwise ask.
+  // Every form with unsaved edits, visible or not.
+  const dirtyItems = items.filter((it) => dirtyKeys.has(`${it.type}:${it.id}`));
+
+  // Back: leave immediately if nothing anywhere is unsaved, otherwise ask.
   const handleBack = useCallback(() => {
-    if (dirty) setExitPrompt("prompt");
+    if (dirtyItems.length > 0) setExitPrompt("prompt");
     else onBack();
-  }, [dirty, onBack]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirtyItems.length, onBack]);
 
   const handleExitSave = useCallback(async () => {
     setExitPrompt("saving");
-    const ok = await handleSave();
-    if (ok) {
-      // Brief beat so "Saved to Drive" is actually seen before the
+    setErrorMessage(null);
+    try {
+      // Sequential rather than parallel: each write goes to the same
+      // couple's Drive folder, and a clear "this one failed" beats a
+      // partial batch nobody can reason about.
+      for (const item of dirtyItems) await saveItem(item);
+      setSaveStatus("saved");
+      // Brief beat so the confirmation is actually seen before the
       // screen changes.
       setTimeout(onBack, 700);
-    } else {
-      setExitPrompt(null); // error message is already on screen
+    } catch (e) {
+      setErrorMessage(e.message);
+      setSaveStatus("error");
+      setExitPrompt("prompt"); // error shows in the dialog; nothing is lost
     }
-  }, [handleSave, onBack]);
+  }, [dirtyItems, saveItem, onBack]);
 
   // Prints exactly what's saved in Drive right now — not whatever's
   // sitting unsaved in the in-page editor — by fetching the couple's
@@ -347,8 +386,15 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
           <div className="w-full max-w-[400px] rounded-xl p-6" style={{ background: "#FFFFFF" }}>
             <h3 className="text-[19px]" style={{ fontFamily: FONT_SERIF, color: ink }}>Unsaved changes</h3>
             <p className="text-[13.5px] mt-2 leading-snug" style={{ color: "#6E675C", fontFamily: FONT_SANS }}>
-              This form has edits that haven't been saved to Drive yet.
+              {dirtyItems.length === 1
+                ? `"${dirtyItems[0].title}" has edits that haven't been saved to Drive yet.`
+                : `${dirtyItems.length} forms have edits that haven't been saved to Drive yet:`}
             </p>
+            {dirtyItems.length > 1 && (
+              <ul className="mt-1.5 ml-4 list-disc text-[13px]" style={{ color: "#6E675C", fontFamily: FONT_SANS }}>
+                {dirtyItems.map((it) => <li key={`${it.type}:${it.id}`}>{it.title}</li>)}
+              </ul>
+            )}
             {saveStatus === "error" && (
               <p className="text-[13px] mt-2" style={{ color: brick, fontFamily: FONT_SANS }}>{errorMessage}</p>
             )}
@@ -359,7 +405,9 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
                 className="flex-1 px-4 py-2.5 rounded-lg text-white text-[14px]"
                 style={{ background: bronze, fontFamily: FONT_SANS }}
               >
-                {exitPrompt === "saving" ? (saveStatus === "saved" ? "Saved to Drive" : "Saving…") : "Save changes"}
+                {exitPrompt === "saving"
+                  ? (saveStatus === "saved" ? "Saved to Drive" : "Saving…")
+                  : dirtyItems.length > 1 ? "Save all changes" : "Save changes"}
               </button>
               <button
                 onClick={onBack}
@@ -437,7 +485,14 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
                 className="w-full text-left px-5 py-3.5 border-l-2 flex-shrink-0"
                 style={{ borderColor: activeKey === key ? bronze : "transparent", background: activeKey === key ? "#FFFFFF" : "transparent" }}
               >
-                <span className="text-[14.5px]" style={{ fontFamily: FONT_SANS, color: activeKey === key ? ink : "#6E675C" }}>{it.title}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-[14.5px]" style={{ fontFamily: FONT_SANS, color: activeKey === key ? ink : "#6E675C" }}>{it.title}</span>
+                  {dirtyKeys.has(key) && (
+                    // Unsaved-edits marker, so a form you've switched
+                    // away from doesn't quietly look finished.
+                    <span title="Unsaved changes" className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: bronze }} />
+                  )}
+                </span>
               </button>
             );
           })}
