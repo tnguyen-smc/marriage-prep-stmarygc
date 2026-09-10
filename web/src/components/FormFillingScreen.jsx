@@ -147,6 +147,10 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   const [saveStatus, setSaveStatus] = useState("idle"); // idle | saving | saved | error
   const [printStatus, setPrintStatus] = useState("idle"); // idle | preparing | error
   const [errorMessage, setErrorMessage] = useState(null);
+  // True once anything has been typed into a field since the last save.
+  const [dirty, setDirty] = useState(false);
+  // Shown when Back is pressed with unsaved edits: null | "prompt" | "saving"
+  const [exitPrompt, setExitPrompt] = useState(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const containerRef = useRef(null);
   // Caches the loaded PDFDocumentProxy per (coupleId, item) for this
@@ -155,6 +159,20 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   const docCacheRef = useRef(new Map());
 
   const activeItem = items.find((it) => `${it.type}:${it.id}` === activeKey) || null;
+
+  // PDF.js writes every field edit into the document's annotationStorage,
+  // and calls onSetModified the first time that storage goes from clean
+  // to dirty. Hooking it is what lets us know there are unsaved changes
+  // without tracking each field ourselves — the same storage handleSave
+  // already reads from.
+  useEffect(() => {
+    if (!pdfDoc) return;
+    const storage = pdfDoc.annotationStorage;
+    storage.onSetModified = () => setDirty(true);
+    return () => {
+      storage.onSetModified = null;
+    };
+  }, [pdfDoc]);
 
   useEffect(() => {
     if (activeKey && !items.some((it) => `${it.type}:${it.id}` === activeKey)) {
@@ -179,6 +197,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   useEffect(() => {
     setPageNumber(1);
     setSaveStatus("idle");
+    setDirty(false);
     setErrorMessage(null);
     if (!activeItem) {
       setPdfDoc(null);
@@ -223,8 +242,10 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [couple.id, activeKey]);
 
+  // Returns true only if the write to Drive actually succeeded, so
+  // callers (Back, Print) can decide whether to carry on.
   const handleSave = useCallback(async () => {
-    if (!pdfDoc || !activeItem) return;
+    if (!pdfDoc || !activeItem) return false;
     setSaveStatus("saving");
     setErrorMessage(null);
     try {
@@ -232,11 +253,35 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
       const save = activeItem.type === "template" ? api.couples.templateFile.save : api.couples.customFormFile.save;
       await save(couple.id, activeItem.id, bytes);
       setSaveStatus("saved");
+      setDirty(false);
+      // pdfDoc.saveDocument() resets the storage's own modified flag, so
+      // re-arm the hook for the next round of edits.
+      pdfDoc.annotationStorage.onSetModified = () => setDirty(true);
+      return true;
     } catch (e) {
       setErrorMessage(e.message);
       setSaveStatus("error");
+      return false;
     }
   }, [pdfDoc, couple.id, activeItem]);
+
+  // Back: leave immediately if nothing's unsaved, otherwise ask.
+  const handleBack = useCallback(() => {
+    if (dirty) setExitPrompt("prompt");
+    else onBack();
+  }, [dirty, onBack]);
+
+  const handleExitSave = useCallback(async () => {
+    setExitPrompt("saving");
+    const ok = await handleSave();
+    if (ok) {
+      // Brief beat so "Saved to Drive" is actually seen before the
+      // screen changes.
+      setTimeout(onBack, 700);
+    } else {
+      setExitPrompt(null); // error message is already on screen
+    }
+  }, [handleSave, onBack]);
 
   // Prints exactly what's saved in Drive right now — not whatever's
   // sitting unsaved in the in-page editor — by fetching the couple's
@@ -250,6 +295,17 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     setPrintStatus("preparing");
     setErrorMessage(null);
     try {
+      // Print always reflects what's in Drive, so save first when there
+      // are unsaved edits — otherwise the printout would silently be the
+      // older copy. A failed save aborts the print rather than handing
+      // over a stale file.
+      if (dirty) {
+        const ok = await handleSave();
+        if (!ok) {
+          setPrintStatus("idle");
+          return;
+        }
+      }
       const fetchBytes = activeItem.type === "template" ? api.couples.templateFile.fetchBytes : api.couples.customFormFile.fetchBytes;
       const buf = await fetchBytes(couple.id, activeItem.id);
       // Only forms flagged "Print as a half-fold booklet" in Settings
@@ -278,7 +334,7 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
       setErrorMessage(e.message);
       setPrintStatus("error");
     }
-  }, [couple.id, activeItem]);
+  }, [couple.id, activeItem, dirty, handleSave]);
 
   const numPages = pdfDoc?.numPages || 0;
   const goPrev = () => setPageNumber((p) => Math.max(1, p - 1));
@@ -286,8 +342,47 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
 
   return (
     <div className="h-screen flex flex-col" style={{ background: "#FAF7F0" }}>
+      {exitPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-5" style={{ background: "rgba(35,31,26,0.35)" }}>
+          <div className="w-full max-w-[400px] rounded-xl p-6" style={{ background: "#FFFFFF" }}>
+            <h3 className="text-[19px]" style={{ fontFamily: FONT_SERIF, color: ink }}>Unsaved changes</h3>
+            <p className="text-[13.5px] mt-2 leading-snug" style={{ color: "#6E675C", fontFamily: FONT_SANS }}>
+              This form has edits that haven't been saved to Drive yet.
+            </p>
+            {saveStatus === "error" && (
+              <p className="text-[13px] mt-2" style={{ color: brick, fontFamily: FONT_SANS }}>{errorMessage}</p>
+            )}
+            <div className="flex items-center gap-2 mt-5">
+              <button
+                onClick={handleExitSave}
+                disabled={exitPrompt === "saving"}
+                className="flex-1 px-4 py-2.5 rounded-lg text-white text-[14px]"
+                style={{ background: bronze, fontFamily: FONT_SANS }}
+              >
+                {exitPrompt === "saving" ? (saveStatus === "saved" ? "Saved to Drive" : "Saving…") : "Save changes"}
+              </button>
+              <button
+                onClick={onBack}
+                disabled={exitPrompt === "saving"}
+                className="flex-1 px-4 py-2.5 rounded-lg text-[14px]"
+                style={{ border: "1px solid #E4DDD0", color: ink, fontFamily: FONT_SANS }}
+              >
+                Discard
+              </button>
+            </div>
+            <button
+              onClick={() => setExitPrompt(null)}
+              disabled={exitPrompt === "saving"}
+              className="w-full mt-2 py-2 text-[13px]"
+              style={{ color: "#8A8378", fontFamily: FONT_SANS }}
+            >
+              Keep editing
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-4 px-4 sm:px-6 py-4 border-b flex-shrink-0" style={{ borderColor: "#E4DDD0", background: "#FFFFFF" }}>
-        <button onClick={onBack} className="p-2 rounded-full hover:bg-black/5 flex-shrink-0"><ChevronLeft size={20} color={ink} /></button>
+        <button onClick={handleBack} className="p-2 rounded-full hover:bg-black/5 flex-shrink-0"><ChevronLeft size={20} color={ink} /></button>
         <div className="min-w-0 flex-1">
           <div className="text-[19px] leading-tight truncate" style={{ fontFamily: FONT_SERIF, color: ink }}>{couple.groom} &amp; {couple.bride}</div>
           <div className="text-[13px] mt-0.5 flex items-center gap-1.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>

@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { api } from "./api.js";
+import { api, isServerWaking } from "./api.js";
 import { useRoute } from "./hooks/useRoute.js";
+import { ink, FONT_SERIF, FONT_SANS } from "./theme.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import DirectoryScreen from "./components/DirectoryScreen.jsx";
 import CoupleProfileScreen from "./components/CoupleProfileScreen.jsx";
 import FormFillingScreen from "./components/FormFillingScreen.jsx";
 import SettingsScreen from "./components/SettingsScreen.jsx";
-import { Spinner } from "./components/Shared.jsx";
+import { Spinner, AnimatedEllipsis } from "./components/Shared.jsx";
 
 export default function App() {
   const [authStatus, setAuthStatus] = useState("checking"); // checking | signedOut | signedIn
+  // True while the backend is asleep/booting and we're still retrying.
+  const [serverWaking, setServerWaking] = useState(false);
   const [profile, setProfile] = useState(null);
   const [couples, setCouples] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -24,10 +27,44 @@ export default function App() {
     setPriests(p);
   }, []);
 
+  // Render puts idle instances to sleep, and a cold boot can take the
+  // better part of a minute. During that window api.me() doesn't answer
+  // "not signed in" — it fails to connect at all, or the proxy returns
+  // 502/503/504. Treating that as signedOut is what used to dump people
+  // on the login screen (or leave them staring at "Checking your Google
+  // sign-in…") until they refreshed by hand. So: retry those failures on
+  // a timer, and once the server does answer, carry on into the app with
+  // no refresh needed. A real 401 still falls through to signedOut
+  // immediately.
   useEffect(() => {
-    api.me()
-      .then((me) => { setProfile(me); setAuthStatus("signedIn"); return loadData(); })
-      .catch(() => setAuthStatus("signedOut"));
+    let cancelled = false;
+    let timer = null;
+
+    const attempt = async () => {
+      try {
+        const me = await api.me();
+        if (cancelled) return;
+        setProfile(me);
+        setAuthStatus("signedIn");
+        setServerWaking(false);
+        await loadData();
+      } catch (e) {
+        if (cancelled) return;
+        if (isServerWaking(e)) {
+          setServerWaking(true);
+          timer = setTimeout(attempt, 3000);
+        } else {
+          setServerWaking(false);
+          setAuthStatus("signedOut");
+        }
+      }
+    };
+
+    attempt();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [loadData]);
 
   const handleLogout = async () => {
@@ -57,7 +94,20 @@ export default function App() {
 
   const isAdmin = profile?.role === "admin";
 
-  if (authStatus === "checking") return <Spinner label="Checking your Google sign-in…" />;
+  if (authStatus === "checking") {
+    return serverWaking ? (
+      <div className="h-screen flex flex-col items-center justify-center px-6 text-center" style={{ background: "#FAF7F0" }}>
+        <div className="text-[19px]" style={{ fontFamily: FONT_SERIF, color: ink }}>
+          Server is booting. Please wait<AnimatedEllipsis />
+        </div>
+        <div className="text-[13px] mt-2" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
+          This can take up to a minute after a quiet spell. The app opens on its own — no need to refresh.
+        </div>
+      </div>
+    ) : (
+      <Spinner label="Checking your Google sign-in…" />
+    );
+  }
   if (authStatus === "signedOut") return <LoginScreen authError={authError} />;
 
   if (route.name === "settings" && isAdmin) {

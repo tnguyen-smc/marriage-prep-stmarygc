@@ -10,14 +10,21 @@ import { getConfigValue } from "../config.js";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const router = Router();
 const TAB = "Templates";
-const HEADER = ["id", "title", "driveFileId", "createdAt"];
+const HEADER = ["id", "title", "driveFileId", "createdAt", "booklet"];
+
+// The Sheet stores everything as text, so the booklet flag lives as
+// "TRUE"/"" and is converted at the edges. Anything that isn't exactly
+// "TRUE" — including the empty cell every template row had before this
+// column existed — reads as false, which is the right default.
+const toBooklet = (v) => String(v).toUpperCase() === "TRUE";
+const fromBooklet = (v) => (v ? "TRUE" : "");
 
 // List every uploaded PDF template (title + id), so the Settings screen
 // and the intake checklist can both show them.
 router.get("/", requireAuth, async (req, res) => {
   try {
     const { rows } = await readRows(req.oauth2Client, TAB, HEADER);
-    res.json(rows.map(({ _row, ...r }) => r));
+    res.json(rows.map(({ _row, ...r }) => ({ ...r, booklet: toBooklet(r.booklet) })));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -33,9 +40,9 @@ router.post("/", requireAuth, requireAdmin, upload.single("file"), async (req, r
     const legacyFallback = await getConfigValue(req.oauth2Client, "driveFolderId", process.env.GOOGLE_DRIVE_FOLDER_ID || "");
     const folderId = await getConfigValue(req.oauth2Client, "templatesFolderId", legacyFallback);
     const { id: driveFileId } = await uploadPdf(req.oauth2Client, req.file.originalname, req.file.buffer, folderId);
-    const row = { id: uuid(), title: req.body.title, driveFileId, createdAt: new Date().toISOString() };
+    const row = { id: uuid(), title: req.body.title, driveFileId, createdAt: new Date().toISOString(), booklet: "" };
     await appendRow(req.oauth2Client, TAB, HEADER, row);
-    res.json(row);
+    res.json({ ...row, booklet: false });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -68,9 +75,20 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
     if (!match) return res.status(404).json({ error: "Template not found" });
     if (!req.body.title || !req.body.title.trim()) return res.status(400).json({ error: "Title is required" });
 
-    const rowObj = { id: match.id, title: req.body.title.trim(), driveFileId: match.driveFileId, createdAt: match.createdAt };
+    // `booklet` is optional here: callers that only rename (the older
+    // rename-only path) leave the saved value alone rather than having
+    // it silently cleared by its absence from the body.
+    const booklet = typeof req.body.booklet === "boolean" ? req.body.booklet : toBooklet(match.booklet);
+
+    const rowObj = {
+      id: match.id,
+      title: req.body.title.trim(),
+      driveFileId: match.driveFileId,
+      createdAt: match.createdAt,
+      booklet: fromBooklet(booklet),
+    };
     await updateRow(req.oauth2Client, TAB, match._row, HEADER, rowObj);
-    res.json(rowObj);
+    res.json({ ...rowObj, booklet });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

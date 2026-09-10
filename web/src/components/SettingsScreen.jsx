@@ -141,19 +141,16 @@ function TemplateRow({ template, onRenamed, onDeleted }) {
         </button>
       </div>
 
-      <label className="flex items-start gap-2.5 mt-2.5 ml-7 cursor-pointer">
+      <label className="flex items-center gap-2.5 mt-2.5 ml-7 cursor-pointer">
         <input
           type="checkbox"
           checked={booklet}
           onChange={(e) => setBooklet(e.target.checked)}
-          className="mt-0.5 flex-shrink-0"
+          className="flex-shrink-0"
           style={{ accentColor: bronze }}
         />
-        <span className="text-[12.5px] leading-snug" style={{ color: "#6E675C", fontFamily: FONT_SANS }}>
-          Print as a half-fold booklet on 11x17
-          <span className="block text-[11px] mt-0.5" style={{ color: "#8A8378" }}>
-            Pages are paired onto 11x17 sheets in folding order. Print 2-sided, short-edge flip, then fold down the middle. Leave off for ordinary one-page-per-sheet printing.
-          </span>
+        <span className="text-[12.5px]" style={{ color: "#6E675C", fontFamily: FONT_SANS }}>
+          Print as a half-fold booklet
         </span>
       </label>
     </div>
@@ -443,7 +440,10 @@ export default function SettingsScreen({ templates, priests, onBack, onTemplates
         </div>
 
         <div>
-          <h2 className="text-[16px] mb-3" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Existing templates</h2>
+          <h2 className="text-[16px] mb-1.5" style={{ fontFamily: FONT_SANS, color: ink, fontWeight: 600 }}>Existing templates</h2>
+          <p className="text-[12px] mb-3 leading-snug" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
+            Pages are paired onto 11x17 sheets in folding order. Print 2-sided, short-edge flip, then fold down the middle. Leave off for ordinary one-page-per-sheet printing.
+          </p>
           {templates.length === 0 ? (
             <div className="text-[13px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>No templates uploaded yet.</div>
           ) : (

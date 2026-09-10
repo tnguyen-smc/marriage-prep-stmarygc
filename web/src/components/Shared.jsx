@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { sage, FONT_SANS } from "../theme.js";
 import { STATUS_STYLES } from "../data/helpers.js";
 
@@ -40,5 +40,19 @@ export function Spinner({ label }) {
     <div className="flex items-center justify-center py-16 text-[14px]" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
       {label || "Loading…"}
     </div>
+  );
+}
+
+/** An ellipsis that cycles ".", "..", "..." so a long wait visibly reads
+ *  as "still working" rather than a frozen screen. Width is fixed at
+ *  three characters so the text before it doesn't shuffle sideways. */
+export function AnimatedEllipsis() {
+  const [n, setN] = useState(1);
+  useEffect(() => {
+    const id = setInterval(() => setN((v) => (v % 3) + 1), 450);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span style={{ display: "inline-block", width: "1.6em", textAlign: "left" }}>{".".repeat(n)}</span>
   );
 }

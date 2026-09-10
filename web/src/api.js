@@ -28,19 +28,43 @@ async function readErrorMessage(res) {
  
 async function apiFetch(path, opts = {}) {
   const isFormData = opts.body instanceof FormData;
-  const res = await fetch(`${API_URL}${path}`, {
-    credentials: "include",
-    ...opts,
-    headers: {
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...(opts.headers || {}),
-    },
-  });
-  if (!res.ok) throw new Error(await readErrorMessage(res));
+  let res;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      credentials: "include",
+      ...opts,
+      headers: {
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
+        ...(opts.headers || {}),
+      },
+    });
+  } catch (e) {
+    // The request never reached the server at all (offline, DNS, or the
+    // Render instance still spinning up). Status 0 distinguishes this
+    // from a real answer like 401, which callers need to tell apart —
+    // see isServerWaking below.
+    const err = new Error("Could not reach the server.");
+    err.status = 0;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(await readErrorMessage(res));
+    err.status = res.status;
+    throw err;
+  }
   const contentType = res.headers.get("content-type") || "";
   return contentType.includes("application/json") ? res.json() : res;
 }
  
+/** True when a failure looks like "the backend isn't up yet" rather than
+ *  a real answer from it. Render free/starter instances sleep when idle
+ *  and take a while to boot, during which requests either never connect
+ *  (status 0) or come back from the proxy as 502/503/504. A 401 is a
+ *  genuine reply and must NOT be retried — that's just "not signed in". */
+export function isServerWaking(err) {
+  return err?.status === 0 || err?.status === 502 || err?.status === 503 || err?.status === 504;
+}
+
 export const api = {
   loginUrl: () => `${API_URL}/api/auth/google`,
   me: () => apiFetch("/api/auth/me"),
