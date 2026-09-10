@@ -7,6 +7,7 @@ import "pdfjs-dist/web/pdf_viewer.css";
 import { ink, sage, bronze, brick, FONT_SERIF, FONT_SANS } from "../theme.js";
 import { formatDate } from "../data/helpers.js";
 import { api } from "../api.js";
+import { toPrintableBlobUrl } from "../data/booklet.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -133,8 +134,10 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
   // up in the same sidebar and work the same way once selected — the
   // only difference is which API endpoint fetches/saves their bytes.
   const items = [
-    ...templates.filter((t) => couple.templateIds.includes(t.id)).map((t) => ({ type: "template", id: t.id, title: t.title })),
-    ...couple.customForms.map((f) => ({ type: "custom", id: f.id, title: f.title })),
+    ...templates.filter((t) => couple.templateIds.includes(t.id)).map((t) => ({ type: "template", id: t.id, title: t.title, booklet: !!t.booklet })),
+    // Imported forms have no Settings row of their own, so they print
+    // normally unless someone adds the same flag to them server-side.
+    ...couple.customForms.map((f) => ({ type: "custom", id: f.id, title: f.title, booklet: !!f.booklet })),
   ];
 
   const [activeKey, setActiveKey] = useState(items[0] ? `${items[0].type}:${items[0].id}` : null);
@@ -249,7 +252,10 @@ export default function FormFillingScreen({ couple, templates, onBack }) {
     try {
       const fetchBytes = activeItem.type === "template" ? api.couples.templateFile.fetchBytes : api.couples.customFormFile.fetchBytes;
       const buf = await fetchBytes(couple.id, activeItem.id);
-      const blobUrl = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+      // Only forms flagged "Print as a half-fold booklet" in Settings
+      // get imposed onto 11x17 sheets; everything else is printed
+      // exactly as-is. See ../data/booklet.js.
+      const blobUrl = await toPrintableBlobUrl(buf, activeItem.booklet);
       const iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
       iframe.style.right = "0";

@@ -81,19 +81,25 @@ function PriestRow({ priest, onSaved, onRemoved }) {
 
 function TemplateRow({ template, onRenamed, onDeleted }) {
   const [title, setTitle] = useState(template.title);
+  // Whether Print should impose this form onto 11x17 sheets for
+  // half-fold booklet printing. Off unless someone turns it on here.
+  const [booklet, setBooklet] = useState(!!template.booklet);
   const [saving, setSaving] = useState(false);
 
   // Same stale-state issue as PriestRow above — resync on every update.
   useEffect(() => {
     setTitle(template.title);
-  }, [template.id, template.title]);
+    setBooklet(!!template.booklet);
+  }, [template.id, template.title, template.booklet]);
 
-  const dirty = title.trim() !== template.title && title.trim().length > 0;
+  const dirty =
+    (title.trim() !== template.title && title.trim().length > 0) ||
+    booklet !== !!template.booklet;
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.templates.rename(template.id, title.trim());
+      await api.templates.update(template.id, { title: title.trim() || template.title, booklet });
       onRenamed();
     } finally {
       setSaving(false);
@@ -107,31 +113,49 @@ function TemplateRow({ template, onRenamed, onDeleted }) {
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5">
-      <FileText size={16} color={bronze} className="flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full text-[14px] bg-transparent outline-none rounded px-1 -mx-1 focus:bg-white"
-          style={{ fontFamily: FONT_SANS, color: ink }}
-        />
-        <div className="text-[11px] mt-0.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
-          Uploaded {new Date(template.createdAt).toLocaleDateString()}
+    <div className="px-4 py-3.5">
+      <div className="flex items-center gap-3">
+        <FileText size={16} color={bronze} className="flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full text-[14px] bg-transparent outline-none rounded px-1 -mx-1 focus:bg-white"
+            style={{ fontFamily: FONT_SANS, color: ink }}
+          />
+          <div className="text-[11px] mt-0.5" style={{ color: "#8A8378", fontFamily: FONT_SANS }}>
+            Uploaded {new Date(template.createdAt).toLocaleDateString()}
+          </div>
         </div>
+        <button
+          onClick={handleSave}
+          disabled={!dirty || saving}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] text-white flex-shrink-0"
+          style={{ background: dirty ? sage : "#B7AF9F", fontFamily: FONT_SANS, cursor: dirty ? "pointer" : "not-allowed" }}
+        >
+          <Save size={13} />
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button onClick={handleDelete} className="p-2 rounded-lg hover:bg-black/5 flex-shrink-0">
+          <Trash2 size={16} color={brick} />
+        </button>
       </div>
-      <button
-        onClick={handleSave}
-        disabled={!dirty || saving}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] text-white flex-shrink-0"
-        style={{ background: dirty ? sage : "#B7AF9F", fontFamily: FONT_SANS, cursor: dirty ? "pointer" : "not-allowed" }}
-      >
-        <Save size={13} />
-        {saving ? "Saving…" : "Rename"}
-      </button>
-      <button onClick={handleDelete} className="p-2 rounded-lg hover:bg-black/5 flex-shrink-0">
-        <Trash2 size={16} color={brick} />
-      </button>
+
+      <label className="flex items-start gap-2.5 mt-2.5 ml-7 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={booklet}
+          onChange={(e) => setBooklet(e.target.checked)}
+          className="mt-0.5 flex-shrink-0"
+          style={{ accentColor: bronze }}
+        />
+        <span className="text-[12.5px] leading-snug" style={{ color: "#6E675C", fontFamily: FONT_SANS }}>
+          Print as a half-fold booklet on 11x17
+          <span className="block text-[11px] mt-0.5" style={{ color: "#8A8378" }}>
+            Pages are paired onto 11x17 sheets in folding order. Print 2-sided, short-edge flip, then fold down the middle. Leave off for ordinary one-page-per-sheet printing.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

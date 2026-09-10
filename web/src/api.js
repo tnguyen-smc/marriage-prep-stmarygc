@@ -54,6 +54,10 @@ export const api = {
       fd.append("file", file);
       return apiFetch("/api/templates", { method: "POST", body: fd });
     },
+    // `rename` is kept as a thin wrapper so existing callers don't change;
+    // `update` is the general form and is what carries the per-template
+    // booklet print setting.
+    update: (id, payload) => apiFetch(`/api/templates/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
     rename: (id, title) => apiFetch(`/api/templates/${id}`, { method: "PUT", body: JSON.stringify({ title }) }),
     remove: (id) => apiFetch(`/api/templates/${id}`, { method: "DELETE" }),
     fetchBytes: async (id) => {
